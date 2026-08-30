@@ -1,18 +1,41 @@
-import './App.css'
+import "./App.css";
 
-function Dashboard({ onLogout, onReportIssue }) {
+function Dashboard({
+  user,
+  onLogout,
+  onReportIssue,
+  onMyIssues,
+  onTrackStatus,
+}) {
+  const userRole = user?.role || "STUDENT";
+
+  const displayRole =
+    userRole === "FACULTY" ? "Faculty" : "Student";
+
+  const displayName =
+    user?.name ||
+    user?.full_name ||
+    user?.username ||
+    displayRole;
+
   return (
     <div className="dashboard-page">
 
+      {/* =====================================================
+          NAVBAR
+      ===================================================== */}
+
       <nav className="dashboard-navbar">
+
         <div className="logo">
           🏫 Campus Civic
         </div>
 
         <div className="dashboard-nav-right">
-          <span className="student-name">
-            👤 Student
-          </span>
+
+          <div className="student-name">
+            👤 {displayName}
+          </div>
 
           <button
             className="logout-btn"
@@ -20,16 +43,29 @@ function Dashboard({ onLogout, onReportIssue }) {
           >
             Logout
           </button>
+
         </div>
+
       </nav>
 
+
+      {/* =====================================================
+          MAIN CONTENT
+      ===================================================== */}
+
       <main className="dashboard-content">
+
+
+        {/* ===================================================
+            HERO
+        =================================================== */}
 
         <section className="dashboard-hero">
 
           <div>
+
             <p className="dashboard-label">
-              STUDENT DASHBOARD
+              {displayRole.toUpperCase()} DASHBOARD
             </p>
 
             <h1>
@@ -40,6 +76,7 @@ function Dashboard({ onLogout, onReportIssue }) {
               Manage your campus complaints, track their progress,
               and help make your campus better.
             </p>
+
           </div>
 
           <div className="dashboard-hero-icon">
@@ -48,50 +85,104 @@ function Dashboard({ onLogout, onReportIssue }) {
 
         </section>
 
+
+        {/* ===================================================
+            STATISTICS
+        =================================================== */}
+
         <section className="dashboard-stats">
 
+          {/* TOTAL */}
+
           <div className="stat-card">
-            <div className="stat-icon">📋</div>
+
+            <div className="stat-icon">
+              📋
+            </div>
+
             <div>
               <strong>0</strong>
               <span>Total Reports</span>
             </div>
+
           </div>
 
+
+          {/* PENDING */}
+
           <div className="stat-card">
-            <div className="stat-icon">⏳</div>
+
+            <div className="stat-icon">
+              ⏳
+            </div>
+
             <div>
               <strong>0</strong>
               <span>Pending</span>
             </div>
+
           </div>
 
+
+          {/* IN PROGRESS */}
+
           <div className="stat-card">
-            <div className="stat-icon">🔧</div>
+
+            <div className="stat-icon">
+              🔧
+            </div>
+
             <div>
               <strong>0</strong>
               <span>In Progress</span>
             </div>
+
           </div>
 
+
+          {/* RESOLVED */}
+
           <div className="stat-card">
-            <div className="stat-icon">✅</div>
+
+            <div className="stat-icon">
+              ✅
+            </div>
+
             <div>
               <strong>0</strong>
               <span>Resolved</span>
             </div>
+
           </div>
 
         </section>
 
+
+        {/* ===================================================
+            QUICK ACTIONS
+        =================================================== */}
+
         <section className="dashboard-section">
 
           <div className="section-heading">
-            <h2>Quick Actions</h2>
-            <p>What would you like to do?</p>
+
+            <h2>
+              Quick Actions
+            </h2>
+
+            <p>
+              What would you like to do?
+            </p>
+
           </div>
 
+
           <div className="dashboard-cards">
+
+
+            {/* =================================================
+                REPORT ISSUE
+            ================================================= */}
 
             <div className="dashboard-card">
 
@@ -117,6 +208,11 @@ function Dashboard({ onLogout, onReportIssue }) {
 
             </div>
 
+
+            {/* =================================================
+                MY ISSUES
+            ================================================= */}
+
             <div className="dashboard-card">
 
               <div className="dashboard-card-icon">
@@ -132,11 +228,19 @@ function Dashboard({ onLogout, onReportIssue }) {
                 their current status.
               </p>
 
-              <button className="dashboard-btn secondary-dashboard-btn">
+              <button
+                className="dashboard-btn secondary-dashboard-btn"
+                onClick={onMyIssues}
+              >
                 View My Issues →
               </button>
 
             </div>
+
+
+            {/* =================================================
+                TRACK STATUS
+            ================================================= */}
 
             <div className="dashboard-card">
 
@@ -153,7 +257,10 @@ function Dashboard({ onLogout, onReportIssue }) {
                 submission to resolution.
               </p>
 
-              <button className="dashboard-btn secondary-dashboard-btn">
+              <button
+                className="dashboard-btn secondary-dashboard-btn"
+                onClick={onTrackStatus}
+              >
                 Track Issues →
               </button>
 
@@ -163,12 +270,25 @@ function Dashboard({ onLogout, onReportIssue }) {
 
         </section>
 
+
+        {/* ===================================================
+            RECENT ISSUES
+        =================================================== */}
+
         <section className="recent-section">
 
           <div className="section-heading">
-            <h2>Recent Issues</h2>
-            <p>Your latest reported campus issues</p>
+
+            <h2>
+              Recent Issues
+            </h2>
+
+            <p>
+              Your latest reported campus issues
+            </p>
+
           </div>
+
 
           <div className="empty-state">
 
@@ -198,7 +318,7 @@ function Dashboard({ onLogout, onReportIssue }) {
       </main>
 
     </div>
-  )
+  );
 }
 
-export default Dashboard
+export default Dashboard;
