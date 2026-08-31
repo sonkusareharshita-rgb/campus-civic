@@ -1,15 +1,24 @@
 import { useState } from "react";
 import "./App.css";
 
-function Login({ onBack, onLoginSuccess }) {
+function Login({ onBack, onLoginSuccess, onSignup }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("student");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // =====================================================
+  // NORMAL LOGIN
+  // =====================================================
+
   const handleLogin = async (e) => {
     e.preventDefault();
+
+    if (!email || !password) {
+      alert("Please enter email and password.");
+      return;
+    }
 
     setLoading(true);
 
@@ -18,11 +27,13 @@ function Login({ onBack, onLoginSuccess }) {
         "http://localhost:5000/api/auth/login",
         {
           method: "POST",
+
           headers: {
             "Content-Type": "application/json",
           },
+
           body: JSON.stringify({
-            email,
+            email: email.trim().toLowerCase(),
             password,
           }),
         }
@@ -37,8 +48,7 @@ function Login({ onBack, onLoginSuccess }) {
 
       const loggedInUser = data.user;
 
-      console.log("Login response:", loggedInUser);
-
+      // Check selected role
       const selectedRole = role.toUpperCase();
       const actualRole = loggedInUser.role;
 
@@ -50,12 +60,14 @@ function Login({ onBack, onLoginSuccess }) {
             selectedRole +
             "."
         );
+
         return;
       }
 
       alert("Login successful!");
 
       onLoginSuccess(loggedInUser);
+
     } catch (error) {
       console.error("Login error:", error);
 
@@ -67,45 +79,120 @@ function Login({ onBack, onLoginSuccess }) {
     }
   };
 
+  // =====================================================
+  // GOOGLE LOGIN
+  // =====================================================
+
+  const handleGoogleLogin = () => {
+    alert(
+      "Google Sign-In will be connected in the next step."
+    );
+  };
+
+  // =====================================================
+  // UI
+  // =====================================================
+
   return (
     <div className="login-page">
-      {/* BACKGROUND DECORATION */}
+
+      {/* Background */}
 
       <div className="login-glow glow-one"></div>
       <div className="login-glow glow-two"></div>
 
+
+      {/* Login Card */}
+
       <div className="login-card">
-        {/* BRAND */}
+
+        {/* Brand */}
 
         <div className="login-brand">
-          <div className="login-icon">🏫</div>
 
-          <div>
-            <strong>Campus Civic</strong>
-
-            <span>Campus Issue Management</span>
+          <div className="login-icon">
+            🏫
           </div>
+
+          <div className="login-brand-text">
+
+            <strong>
+              Campus Civic
+            </strong>
+
+            <span>
+              Campus Issue Management
+            </span>
+
+          </div>
+
         </div>
 
-        {/* HEADING */}
+
+        {/* Heading */}
 
         <div className="login-heading">
-          <p>WELCOME BACK</p>
 
-          <h1>Sign in to your account</h1>
+          <p>
+            WELCOME BACK
+          </p>
+
+          <h1>
+            Sign in to your account
+          </h1>
 
           <span>
             Access your Campus Civic dashboard
           </span>
+
         </div>
 
-        {/* ROLE */}
+
+        {/* Google Login */}
+
+        <button
+          type="button"
+          className="google-login-btn"
+          onClick={handleGoogleLogin}
+        >
+
+          <span className="google-icon">
+            G
+          </span>
+
+          <span>
+            Continue with Google
+          </span>
+
+        </button>
+
+
+        {/* Divider */}
+
+        <div className="login-divider">
+
+          <span></span>
+
+          <p>
+            OR CONTINUE WITH EMAIL
+          </p>
+
+          <span></span>
+
+        </div>
+
+
+        {/* Role Selection */}
 
         <div className="role-section">
-          <label>Continue as</label>
+
+          <label>
+            Continue as
+          </label>
 
           <div className="role-options">
-            {/* STUDENT */}
+
+            {/* Student */}
 
             <button
               type="button"
@@ -116,16 +203,21 @@ function Login({ onBack, onLoginSuccess }) {
               }
               onClick={() => setRole("student")}
             >
+
               <span className="role-btn-icon">
                 🎓
               </span>
 
               <span className="role-btn-text">
-                <strong>Student</strong>
+
+                <strong>
+                  Student
+                </strong>
 
                 <small>
                   Report & track issues
                 </small>
+
               </span>
 
               {role === "student" && (
@@ -133,9 +225,11 @@ function Login({ onBack, onLoginSuccess }) {
                   ✓
                 </span>
               )}
+
             </button>
 
-            {/* FACULTY */}
+
+            {/* Faculty */}
 
             <button
               type="button"
@@ -146,16 +240,21 @@ function Login({ onBack, onLoginSuccess }) {
               }
               onClick={() => setRole("faculty")}
             >
+
               <span className="role-btn-icon">
                 👩‍🏫
               </span>
 
               <span className="role-btn-text">
-                <strong>Faculty</strong>
+
+                <strong>
+                  Faculty
+                </strong>
 
                 <small>
                   Report campus issues
                 </small>
+
               </span>
 
               {role === "faculty" && (
@@ -163,9 +262,11 @@ function Login({ onBack, onLoginSuccess }) {
                   ✓
                 </span>
               )}
+
             </button>
 
-            {/* ADMIN */}
+
+            {/* Administrator */}
 
             <button
               type="button"
@@ -176,16 +277,21 @@ function Login({ onBack, onLoginSuccess }) {
               }
               onClick={() => setRole("admin")}
             >
+
               <span className="role-btn-icon">
                 🛡️
               </span>
 
               <span className="role-btn-text">
-                <strong>Administrator</strong>
+
+                <strong>
+                  Administrator
+                </strong>
 
                 <small>
                   Manage & resolve complaints
                 </small>
+
               </span>
 
               {role === "admin" && (
@@ -193,44 +299,66 @@ function Login({ onBack, onLoginSuccess }) {
                   ✓
                 </span>
               )}
+
             </button>
+
           </div>
+
         </div>
 
-        {/* LOGIN FORM */}
+
+        {/* Login Form */}
 
         <form onSubmit={handleLogin}>
-          {/* EMAIL */}
+
+          {/* Email */}
 
           <div className="login-field">
-            <label>Email Address</label>
+
+            <label>
+              Email Address
+            </label>
 
             <div className="input-wrapper">
-              <span className="input-icon">✉️</span>
+
+              <span className="input-icon">
+                ✉️
+              </span>
 
               <input
                 type="email"
-                placeholder="you@example.com"
+                placeholder="you@nit.edu.in"
                 value={email}
                 onChange={(e) =>
                   setEmail(e.target.value)
                 }
                 required
               />
+
             </div>
+
           </div>
 
-          {/* PASSWORD */}
+
+          {/* Password */}
 
           <div className="login-field">
-            <label>Password</label>
+
+            <label>
+              Password
+            </label>
 
             <div className="input-wrapper">
-              <span className="input-icon">🔒</span>
+
+              <span className="input-icon">
+                🔒
+              </span>
 
               <input
                 type={
-                  showPassword ? "text" : "password"
+                  showPassword
+                    ? "text"
+                    : "password"
                 }
                 placeholder="Enter your password"
                 value={password}
@@ -244,26 +372,29 @@ function Login({ onBack, onLoginSuccess }) {
                 type="button"
                 className="password-toggle"
                 onClick={() =>
-                  setShowPassword(!showPassword)
-                }
-                aria-label={
-                  showPassword
-                    ? "Hide password"
-                    : "Show password"
+                  setShowPassword(
+                    !showPassword
+                  )
                 }
               >
-                {showPassword ? "🙈" : "👁️"}
+                {showPassword
+                  ? "🙈"
+                  : "👁️"}
               </button>
+
             </div>
+
           </div>
 
-          {/* LOGIN BUTTON */}
+
+          {/* Login Button */}
 
           <button
             type="submit"
             className="login-submit"
             disabled={loading}
           >
+
             <span>
               {loading
                 ? "Signing in..."
@@ -272,11 +403,37 @@ function Login({ onBack, onLoginSuccess }) {
                   role.slice(1)}
             </span>
 
-            {!loading && <span>→</span>}
+            {!loading && (
+              <span>
+                →
+              </span>
+            )}
+
           </button>
+
         </form>
 
-        {/* BACK */}
+
+        {/* Create Account */}
+
+        <div className="signup-prompt">
+
+          <span>
+            Don't have an account?
+          </span>
+
+          <button
+            type="button"
+            className="signup-link-btn"
+            onClick={onSignup}
+          >
+            Create an account →
+          </button>
+
+        </div>
+
+
+        {/* Back */}
 
         <button
           type="button"
@@ -286,10 +443,21 @@ function Login({ onBack, onLoginSuccess }) {
           ← Back to Home
         </button>
 
+
+        {/* Security */}
+
         <div className="login-security">
-          🔐 Secure Campus Civic Access
+
+          <span>
+            🔐
+          </span>
+
+          Secure Campus Civic Access
+
         </div>
+
       </div>
+
     </div>
   );
 }
