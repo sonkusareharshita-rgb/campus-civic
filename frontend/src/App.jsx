@@ -1,575 +1,239 @@
 import { useState } from "react";
 
+import Feed            from "./Feed";
+import Explore         from "./Explore";
+import ReportIssue     from "./ReportIssue";
+import Profile         from "./Profile";
+import IssueDetail     from "./IssueDetail";
+import Login           from "./Login";
+import BottomNav       from "./BottomNav";
+import AdminDashboard      from "./AdminDashboard";
 import AdminComplaintDetails from "./AdminComplaintDetails";
-import Login from "./Login";
-import Dashboard from "./Dashboard";
-import ReportIssue from "./ReportIssue";
-import AdminDashboard from "./AdminDashboard";
-import MyIssues from "./MyIssues";
-import TrackStatus from "./TrackStatus";
 
 import "./App.css";
 
+// ─────────────────────────────────────────────────────
+// APP
+// ─────────────────────────────────────────────────────
+
 function App() {
 
-  // =====================================================
-  // PAGE STATES
-  // =====================================================
+  // ── AUTH ─────────────────────────────────────
+  const [currentUser, setCurrentUser]   = useState(null);
 
-  const [showLogin, setShowLogin] = useState(false);
-  const [showDashboard, setShowDashboard] = useState(false);
-  const [showReportIssue, setShowReportIssue] = useState(false);
-  const [showMyIssues, setShowMyIssues] = useState(false);
-  const [showTrackStatus, setShowTrackStatus] = useState(false);
+  // ── NAVIGATION ───────────────────────────────
+  // activePage: "feed" | "explore" | "report" | "alerts" | "profile" | "login" | "detail" | "admin"
+  const [activePage, setActivePage]     = useState("feed");
+  const [prevPage,   setPrevPage]       = useState("feed");
 
-  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  // ── ISSUE DETAIL ─────────────────────────────
+  const [selectedIssue, setSelectedIssue] = useState(null);
+
+  // ── ADMIN ────────────────────────────────────
+  const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [showComplaintDetails, setShowComplaintDetails] = useState(false);
 
-  // Selected complaint for admin
-  const [selectedComplaint, setSelectedComplaint] = useState(null);
+  // ── UPVOTES (local state) ────────────────────
+  const [upvotedIds, setUpvotedIds] = useState([]);
 
-  // Logged-in user
-  const [currentUser, setCurrentUser] = useState(null);
+  // ─────────────────────────────────────────────
+  // HANDLERS
+  // ─────────────────────────────────────────────
 
-
-  // =====================================================
-  // REPORT ISSUE PAGE
-  // =====================================================
-
-  if (showReportIssue) {
-    return (
-      <ReportIssue
-        user={currentUser}
-
-        onBack={() => {
-          setShowReportIssue(false);
-          setShowDashboard(true);
-        }}
-      />
-    );
+  function navigate(page) {
+    setPrevPage(activePage);
+    setActivePage(page);
   }
 
-
-  // =====================================================
-  // MY ISSUES PAGE
-  // =====================================================
-
-  if (showMyIssues) {
-    return (
-      <MyIssues
-        user={currentUser}
-
-        onBack={() => {
-          setShowMyIssues(false);
-          setShowDashboard(true);
-        }}
-      />
-    );
+  function handleLoginSuccess(user) {
+    setCurrentUser(user);
+    if (user.role === "ADMIN") {
+      navigate("admin");
+    } else {
+      navigate("feed");
+    }
   }
 
-
-  // =====================================================
-  // TRACK STATUS PAGE
-  // =====================================================
-
-  if (showTrackStatus) {
-    return (
-      <TrackStatus
-        user={currentUser}
-
-        onBack={() => {
-          setShowTrackStatus(false);
-          setShowDashboard(true);
-        }}
-      />
-    );
+  function handleLogout() {
+    setCurrentUser(null);
+    setUpvotedIds([]);
+    navigate("feed");
   }
 
-
-  // =====================================================
-  // ADMIN COMPLAINT DETAILS
-  // =====================================================
-
-  if (showComplaintDetails) {
-    return (
-      <AdminComplaintDetails
-        complaint={selectedComplaint}
-
-        onBack={() => {
-          setShowComplaintDetails(false);
-          setShowAdminDashboard(true);
-        }}
-      />
-    );
+  function handleCardClick(issue) {
+    setSelectedIssue(issue);
+    navigate("detail");
   }
 
+  function handleLoginPrompt() {
+    navigate("login");
+  }
 
-  // =====================================================
-  // ADMIN DASHBOARD
-  // =====================================================
+  async function handleUpvote(issueId) {
+    if (!currentUser) return;
+    if (upvotedIds.includes(issueId)) return;
 
-  if (showAdminDashboard) {
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/issues/${issueId}/support`,
+        {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ reported_by: currentUser.user_id }),
+        }
+      );
+      if (res.ok) {
+        setUpvotedIds((prev) => [...prev, issueId]);
+        // Update count in selectedIssue if open
+        if (selectedIssue && selectedIssue.issue_id === issueId) {
+          setSelectedIssue((prev) => ({
+            ...prev,
+            report_count: Number(prev.report_count || 0) + 1,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error("Upvote error:", err);
+    }
+  }
+
+  function handleReportSuccess() {
+    navigate("feed");
+  }
+
+  // ─────────────────────────────────────────────
+  // SHARED PROPS
+  // ─────────────────────────────────────────────
+
+  const sharedProps = {
+    currentUser,
+    onCardClick:    handleCardClick,
+    onUpvote:       handleUpvote,
+    onLoginPrompt:  handleLoginPrompt,
+    upvotedIds,
+  };
+
+  // ─────────────────────────────────────────────
+  // RENDER — ADMIN FLOW
+  // ─────────────────────────────────────────────
+
+  if (activePage === "admin") {
+    if (showComplaintDetails && selectedComplaint) {
+      return (
+        <AdminComplaintDetails
+          complaint={selectedComplaint}
+          onBack={() => {
+            setShowComplaintDetails(false);
+            setSelectedComplaint(null);
+          }}
+        />
+      );
+    }
     return (
       <AdminDashboard
-
-        onLogout={() => {
-          setShowAdminDashboard(false);
-          setShowComplaintDetails(false);
-          setShowLogin(false);
-          setCurrentUser(null);
-        }}
-
+        onLogout={handleLogout}
         onComplaintClick={(complaint) => {
           setSelectedComplaint(complaint);
-
-          setShowAdminDashboard(false);
           setShowComplaintDetails(true);
         }}
-
       />
     );
   }
 
+  // ─────────────────────────────────────────────
+  // RENDER — LOGIN
+  // ─────────────────────────────────────────────
 
-  // =====================================================
-  // STUDENT / FACULTY DASHBOARD
-  // =====================================================
-
-  if (showDashboard) {
-    return (
-      <Dashboard
-        user={currentUser}
-
-        // -----------------------------
-        // LOGOUT
-        // -----------------------------
-
-        onLogout={() => {
-          setShowDashboard(false);
-          setShowLogin(false);
-
-          setShowReportIssue(false);
-          setShowMyIssues(false);
-          setShowTrackStatus(false);
-
-          setCurrentUser(null);
-        }}
-
-
-        // -----------------------------
-        // REPORT ISSUE
-        // -----------------------------
-
-        onReportIssue={() => {
-          setShowDashboard(false);
-          setShowReportIssue(true);
-        }}
-
-
-        // -----------------------------
-        // MY ISSUES
-        // -----------------------------
-
-        onMyIssues={() => {
-          setShowDashboard(false);
-          setShowMyIssues(true);
-        }}
-
-
-        // -----------------------------
-        // TRACK STATUS
-        // -----------------------------
-
-        onTrackStatus={() => {
-          setShowDashboard(false);
-          setShowTrackStatus(true);
-        }}
-
-      />
-    );
-  }
-
-
-  // =====================================================
-  // LOGIN PAGE
-  // =====================================================
-
-  if (showLogin) {
+  if (activePage === "login") {
     return (
       <Login
-
-        // Back to Home
-        onBack={() => {
-          setShowLogin(false);
-        }}
-
-
-        // Login successful
-        onLoginSuccess={(user) => {
-
-          console.log("Logged in user:", user);
-
-          setCurrentUser(user);
-          setShowLogin(false);
-
-
-          // -----------------------------------------------
-          // ADMIN
-          // -----------------------------------------------
-
-          if (user.role === "ADMIN") {
-
-            setShowAdminDashboard(true);
-
-          }
-
-
-          // -----------------------------------------------
-          // STUDENT / FACULTY
-          // -----------------------------------------------
-
-          else {
-
-            setShowDashboard(true);
-
-          }
-
-        }}
-
+        onBack={() => navigate(prevPage === "login" ? "feed" : prevPage)}
+        onLoginSuccess={handleLoginSuccess}
       />
     );
   }
 
+  // ─────────────────────────────────────────────
+  // RENDER — ISSUE DETAIL
+  // ─────────────────────────────────────────────
 
-  // =====================================================
-  // HOME PAGE
-  // =====================================================
+  if (activePage === "detail" && selectedIssue) {
+    return (
+      <IssueDetail
+        issue={selectedIssue}
+        currentUser={currentUser}
+        onBack={() => navigate(prevPage)}
+        onUpvote={handleUpvote}
+        onLoginPrompt={handleLoginPrompt}
+        upvotedIds={upvotedIds}
+      />
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // RENDER — REPORT (sheet over feed)
+  // ─────────────────────────────────────────────
+
+  if (activePage === "report") {
+    return (
+      <div className="app-shell">
+        <div className="page-content">
+          <ReportIssue
+            user={currentUser}
+            onBack={() => navigate("feed")}
+            onSuccess={handleReportSuccess}
+          />
+        </div>
+        <BottomNav
+          activePage={activePage}
+          onNavigate={navigate}
+          currentUser={currentUser}
+        />
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  // RENDER — MAIN APP SHELL (Feed / Explore / Profile)
+  // ─────────────────────────────────────────────
 
   return (
-    <div className="app">
+    <div className="app-shell">
 
+      <div className="page-content">
 
-      {/* =================================================
-          NAVBAR
-      ================================================= */}
+        {activePage === "feed" && (
+          <Feed {...sharedProps} />
+        )}
 
-      <nav className="navbar">
+        {activePage === "explore" && (
+          <Explore {...sharedProps} />
+        )}
 
-        <div className="logo">
-          🏫 Campus Civic
-        </div>
+        {activePage === "profile" && currentUser && (
+          <Profile
+            {...sharedProps}
+            onLogout={handleLogout}
+          />
+        )}
 
-
-        <div className="nav-links">
-
-          <a href="#home">
-            Home
-          </a>
-
-          <a href="#issues">
-            Issues
-          </a>
-
-          <a href="#about">
-            About
-          </a>
-
-
-          <button
-            className="login-btn"
-
-            onClick={() => {
-              setShowLogin(true);
-            }}
-          >
-            Login
-          </button>
-
-        </div>
-
-      </nav>
-
-
-
-      {/* =================================================
-          MAIN
-      ================================================= */}
-
-      <main>
-
-
-        {/* =================================================
-            HERO SECTION
-        ================================================= */}
-
-        <section
-          className="hero-section"
-          id="home"
-        >
-
-          <div className="hero-content">
-
-            <p className="tagline">
-              MAKE YOUR CAMPUS BETTER
-            </p>
-
-
-            <h1>
-
-              Report Campus Issues.
-
-              <br />
-
-              <span>
-                Make a Difference.
-              </span>
-
-            </h1>
-
-
-            <p className="description">
-
-              Campus Civic helps students report problems around
-              campus, track their status, and work together to
-              create a better college environment.
-
-            </p>
-
-
-            <div className="hero-buttons">
-
-              <button
-                className="primary-btn"
-
-                onClick={() => {
-                  setShowLogin(true);
-                }}
-              >
-                Report an Issue
-              </button>
-
-
-              <button
-                className="secondary-btn"
-
-                onClick={() => {
-                  document
-                    .getElementById("issues")
-                    ?.scrollIntoView({
-                      behavior: "smooth",
-                    });
-                }}
-              >
-                View Issues
-              </button>
-
+        {activePage === "alerts" && (
+          <div className="feed-page">
+            <div className="feed-empty">
+              <div className="feed-empty-icon">🔔</div>
+              <h3>Alerts</h3>
+              <p>Notifications coming soon.</p>
             </div>
-
           </div>
-
-
-
-          {/* =================================================
-              HERO CARD
-          ================================================= */}
-
-          <div className="hero-card">
-
-            <div className="card-icon">
-              📢
-            </div>
-
-
-            <h2>
-              Have a campus problem?
-            </h2>
-
-
-            <p>
-
-              Report it in a few clicks and help the
-              administration take action.
-
-            </p>
-
-
-            <div className="status-box">
-
-              <div>
-
-                <strong>
-                  24
-                </strong>
-
-                <span>
-                  Reported
-                </span>
-
-              </div>
-
-
-              <div>
-
-                <strong>
-                  16
-                </strong>
-
-                <span>
-                  Resolved
-                </span>
-
-              </div>
-
-
-              <div>
-
-                <strong>
-                  8
-                </strong>
-
-                <span>
-                  Pending
-                </span>
-
-              </div>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-
-        {/* =================================================
-            FEATURES
-        ================================================= */}
-
-        <section
-          className="features"
-          id="issues"
-        >
-
-          <h2>
-            How Campus Civic Works
-          </h2>
-
-
-          <div className="feature-container">
-
-
-            {/* REPORT */}
-
-            <div className="feature-card">
-
-              <div className="feature-icon">
-                📝
-              </div>
-
-              <h3>
-                Report
-              </h3>
-
-              <p>
-
-                Report issues like damaged infrastructure,
-                cleanliness, electricity or other campus problems.
-
-              </p>
-
-            </div>
-
-
-
-            {/* TRACK */}
-
-            <div className="feature-card">
-
-              <div className="feature-icon">
-                🔍
-              </div>
-
-              <h3>
-                Track
-              </h3>
-
-              <p>
-
-                Track your reported issue and see whether it is
-                pending, in progress or resolved.
-
-              </p>
-
-            </div>
-
-
-
-            {/* RESOLVE */}
-
-            <div className="feature-card">
-
-              <div className="feature-icon">
-                ✅
-              </div>
-
-              <h3>
-                Resolve
-              </h3>
-
-              <p>
-
-                Help campus authorities identify problems and
-                improve the campus environment.
-
-              </p>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-
-        {/* =================================================
-            ABOUT
-        ================================================= */}
-
-        <section
-          className="about-section"
-          id="about"
-        >
-
-          <h2>
-            About Campus Civic
-          </h2>
-
-
-          <p>
-
-            Campus Civic is a student-focused platform designed
-            to make campus issue reporting simple, transparent
-            and organized.
-
-          </p>
-
-        </section>
-
-      </main>
-
-
-
-      {/* =================================================
-          FOOTER
-      ================================================= */}
-
-      <footer>
-
-        <p>
-          © 2026 Campus Civic | Making Campus Better Together
-        </p>
-
-      </footer>
+        )}
+
+      </div>
+
+      <BottomNav
+        activePage={activePage}
+        onNavigate={navigate}
+        currentUser={currentUser}
+      />
 
     </div>
   );
