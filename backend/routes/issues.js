@@ -1,5 +1,6 @@
 const express = require("express");
 const pool = require("../db");
+const ai = require("../ai/gemini");
 
 const router = express.Router();
 
@@ -62,87 +63,95 @@ router.post("/", async (req, res) => {
 
 
         // -------------------------------------------------
-        // DUPLICATE COMPLAINT CHECK
+        // DUPLICATE COMPLAINT CHECK (AI + SQL fallback)
         // -------------------------------------------------
 
         if (!force_create) {
 
-            const duplicateResult = await pool.query(
-                `
-                SELECT
-                    i.issue_id,
-                    i.title,
-                    i.description,
-                    i.location,
-                    i.status,
-                    i.priority,
-                    i.created_at,
-                    c.category_name,
-                    COUNT(*) OVER (
-                        PARTITION BY
-                            i.category_id,
-                            LOWER(TRIM(i.location))
-                    ) AS report_count
-
-                FROM issues i
-
-                JOIN categories c
-                    ON i.category_id = c.category_id
-
-                WHERE
-                    i.category_id = $1
-
-                    AND LOWER(TRIM(i.location))
-                        = LOWER(TRIM($2))
-
-                    AND i.status IN
-                        ('PENDING', 'IN_PROGRESS')
-
-                    AND (
-                        LOWER(i.title)
-                        LIKE '%' || LOWER($3) || '%'
-
-                        OR
-
-                        LOWER($3)
-                        LIKE '%' || LOWER(i.title) || '%'
-                    )
-
-                ORDER BY i.created_at DESC
-
-                LIMIT 1
-                `,
-                [
-                    category_id,
-                    location,
-                    title
-                ]
+            // Fetch open issues for AI comparison
+            const openResult = await pool.query(
+                `SELECT i.issue_id, i.title, i.description, i.location,
+                        i.status, i.priority, i.created_at,
+                        c.category_name
+                 FROM issues i
+                 JOIN categories c ON i.category_id = c.category_id
+                 WHERE i.status IN ('PENDING', 'IN_PROGRESS')
+                 ORDER BY i.created_at DESC
+                 LIMIT 50`
             );
 
+            let duplicateInfo = null;
 
-            // -------------------------------------------------
-            // DUPLICATE FOUND
-            // -------------------------------------------------
-
-            if (duplicateResult.rows.length > 0) {
-
-                const duplicate =
-                    duplicateResult.rows[0];
-
-
-                return res.status(409).json({
-
-                    duplicate: true,
-
-                    message:
-                        "A similar complaint already exists.",
-
-                    existing_issue: duplicate
-
-                });
-
+            // Try AI-powered detection first
+            if (ai.isEnabled() && openResult.rows.length > 0) {
+                duplicateInfo = await ai.detectDuplicate(
+                    { title, description, location },
+                    openResult.rows
+                );
             }
 
+            // Fallback to SQL if AI is disabled or returned nothing
+            if (!duplicateInfo || (!duplicateInfo.isDuplicate && !ai.isEnabled())) {
+                const sqlDup = await pool.query(
+                    `SELECT i.issue_id, i.title, i.description, i.location,
+                            i.status, i.priority, i.created_at, c.category_name
+                     FROM issues i
+                     JOIN categories c ON i.category_id = c.category_id
+                     WHERE i.category_id = $1
+                       AND LOWER(TRIM(i.location)) = LOWER(TRIM($2))
+                       AND i.status IN ('PENDING', 'IN_PROGRESS')
+                       AND (LOWER(i.title) LIKE '%' || LOWER($3) || '%'
+                            OR LOWER($3) LIKE '%' || LOWER(i.title) || '%')
+                     ORDER BY i.created_at DESC
+                     LIMIT 1`,
+                    [category_id, location, title]
+                );
+                if (sqlDup.rows.length > 0) {
+                    duplicateInfo = {
+                        isDuplicate: true,
+                        matchedIssueId: sqlDup.rows[0].issue_id,
+                        confidence: "HIGH",
+                    };
+                }
+            }
+
+            if (duplicateInfo && duplicateInfo.isDuplicate) {
+                // Find the matched issue details
+                const matchRow = openResult.rows.find(
+                    (r) => r.issue_id === duplicateInfo.matchedIssueId
+                );
+
+                return res.status(409).json({
+                    duplicate: true,
+                    message: "A similar complaint already exists.",
+                    ai_confidence: duplicateInfo.confidence || null,
+                    existing_issue: matchRow || { issue_id: duplicateInfo.matchedIssueId },
+                });
+            }
+
+        }
+
+
+        // -------------------------------------------------
+        // AI AUTO-PRIORITY (if user didn't specify)
+        // -------------------------------------------------
+
+        let finalPriority = priority || "MEDIUM";
+
+        if (!priority && ai.isEnabled()) {
+            finalPriority = await ai.scorePriority(title, description, null);
+            console.log("[AI] Auto-priority:", finalPriority);
+        }
+
+
+        // -------------------------------------------------
+        // AI AUTO-CATEGORY SUGGESTION (logged, not overriding)
+        // -------------------------------------------------
+
+        let aiCategory = null;
+        if (ai.isEnabled()) {
+            aiCategory = await ai.detectCategory(title, description);
+            console.log("[AI] Suggested category:", aiCategory);
         }
 
 
@@ -177,7 +186,7 @@ router.post("/", async (req, res) => {
                 description,
                 location,
                 image_url || null,
-                priority || "MEDIUM"
+                finalPriority
             ]
         );
 
@@ -196,7 +205,13 @@ router.post("/", async (req, res) => {
                 "Issue created successfully",
 
             issue:
-                result.rows[0]
+                result.rows[0],
+
+            ai: {
+                priority_auto: !priority ? finalPriority : null,
+                suggested_category: aiCategory,
+                ai_enabled: ai.isEnabled(),
+            }
 
         });
 
@@ -225,9 +240,76 @@ router.post("/", async (req, res) => {
 
 
 // =====================================================
+// AI REAL-TIME ANALYSIS (before submit)
+// POST /api/issues/analyze
+// =====================================================
+
+router.post("/analyze", async (req, res) => {
+
+    if (!ai.isEnabled()) {
+        return res.json({
+            ai_enabled: false,
+            message: "AI features are disabled. Set GEMINI_API_KEY in .env to enable.",
+        });
+    }
+
+    try {
+        const { title, description, location } = req.body;
+
+        if (!title || !description) {
+            return res.status(400).json({ message: "title and description are required" });
+        }
+
+        // Run all AI analyses in parallel for speed
+        const [priorityResult, categoryResult] = await Promise.all([
+            ai.scorePriority(title, description, null),
+            ai.detectCategory(title, description),
+        ]);
+
+        // Check for duplicates
+        const openResult = await pool.query(
+            `SELECT i.issue_id, i.title, i.description, i.location
+             FROM issues i
+             WHERE i.status IN ('PENDING', 'IN_PROGRESS')
+             ORDER BY i.created_at DESC
+             LIMIT 50`
+        );
+
+        const duplicateResult = await ai.detectDuplicate(
+            { title, description, location: location || "" },
+            openResult.rows
+        );
+
+        res.json({
+            ai_enabled: true,
+            suggested_priority: priorityResult,
+            suggested_category: categoryResult,
+            duplicate_check: duplicateResult,
+        });
+
+    } catch (error) {
+        console.error("[AI] Analyze error:", error);
+        res.status(500).json({ message: "AI analysis failed", error: error.message });
+    }
+
+});
+
+
+// =====================================================
+// AI STATUS CHECK
+// GET /api/issues/ai-status
+// =====================================================
+
+router.get("/ai-status", (req, res) => {
+    res.json({ ai_enabled: ai.isEnabled() });
+});
+
+
+// =====================================================
 // SUPPORT EXISTING COMPLAINT
 // POST /api/issues/:issueId/support
 // =====================================================
+
 
 router.post("/:issueId/support", async (req, res) => {
 

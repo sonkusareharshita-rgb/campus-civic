@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./App.css";
 
 const LOCATIONS = [
@@ -41,6 +41,41 @@ function ReportIssue({ user, onBack, onSuccess }) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  // AI Analysis state
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const analyzeTimer = useRef(null);
+
+  // Debounced AI analysis — fires when title+description are long enough
+  useEffect(() => {
+    if (title.length < 10 || description.length < 20) {
+      setAiSuggestion(null);
+      return;
+    }
+
+    clearTimeout(analyzeTimer.current);
+    analyzeTimer.current = setTimeout(async () => {
+      setAiLoading(true);
+      try {
+        const res = await fetch("http://localhost:5000/api/issues/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, description, location }),
+        });
+        const data = await res.json();
+        if (data.ai_enabled) {
+          setAiSuggestion(data);
+        }
+      } catch {
+        // AI is optional — fail silently
+      } finally {
+        setAiLoading(false);
+      }
+    }, 1500); // 1.5s debounce
+
+    return () => clearTimeout(analyzeTimer.current);
+  }, [title, description, location]);
 
 
   // ==========================================
@@ -574,7 +609,48 @@ function ReportIssue({ user, onBack, onSuccess }) {
         </div>
 
 
+        {/* ── AI ASSISTANT PANEL ── */}
+        {(aiLoading || aiSuggestion) && (
+          <div className="ai-panel">
+            <div className="ai-panel-header">
+              <span className="ai-panel-icon">{aiLoading ? "⏳" : "🤖"}</span>
+              <strong>AI Assistant</strong>
+              {aiLoading && <span className="ai-panel-loading">Analyzing…</span>}
+            </div>
+
+            {aiSuggestion && !aiLoading && (
+              <div className="ai-panel-body">
+
+                {/* Duplicate warning */}
+                {aiSuggestion.duplicate_check?.isDuplicate && (
+                  <div className="ai-chip ai-chip-warn">
+                    ⚠️ Similar issue already exists (
+                    {aiSuggestion.duplicate_check.confidence} confidence)
+                  </div>
+                )}
+
+                {/* Suggested priority */}
+                {aiSuggestion.suggested_priority && (
+                  <div className="ai-chip ai-chip-priority" data-priority={aiSuggestion.suggested_priority}>
+                    📊 Suggested priority: <strong>{aiSuggestion.suggested_priority}</strong>
+                  </div>
+                )}
+
+                {/* Suggested category */}
+                {aiSuggestion.suggested_category?.categoryName && (
+                  <div className="ai-chip ai-chip-category">
+                    🏷️ Suggested category: <strong>{aiSuggestion.suggested_category.categoryName}</strong>
+                  </div>
+                )}
+
+              </div>
+            )}
+          </div>
+        )}
+
+
         {/* LOCATION */}
+
 
         <div className="report-field">
 
