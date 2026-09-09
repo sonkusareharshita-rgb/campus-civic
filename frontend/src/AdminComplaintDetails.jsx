@@ -1,44 +1,71 @@
 import { useState } from "react";
 import "./App.css";
 
-function AdminComplaintDetails({ complaint, onBack }) {
+function AdminComplaintDetails({ complaint, onBack, currentUser }) {
   const [status, setStatus] = useState(
     complaint?.status || "PENDING"
   );
 
-  const [resolutionNote, setResolutionNote] = useState("");
-  const [proofImage, setProofImage] = useState(null);
+  const [resolutionNote, setResolutionNote] = useState(
+    complaint?.resolution_note || ""
+  );
+  const [proofImage, setProofImage]   = useState(null);
+  const [saving,     setSaving]       = useState(false);
+  const [saveError,  setSaveError]    = useState(null);
+  const [savedOk,    setSavedOk]      = useState(false);
 
   const handleProofUpload = (e) => {
     const file = e.target.files[0];
-
-    if (file) {
-      setProofImage(file);
-    }
+    if (file) setProofImage(file);
   };
 
-  const handleUpdate = (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
+    setSaveError(null);
+    setSavedOk(false);
 
+    // ── LOCAL VALIDATION ────────────────────────
     if (status === "RESOLVED") {
       if (!resolutionNote.trim()) {
-        alert("Please enter a resolution note.");
-        return;
-      }
-
-      if (!proofImage) {
-        alert("Please upload a proof photo before resolving.");
+        setSaveError("Please enter a resolution note before marking as Resolved.");
         return;
       }
     }
 
-    alert("Complaint updated successfully! ✅");
+    setSaving(true);
 
-    console.log({
-      status,
-      resolutionNote,
-      proofImage,
-    });
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/issues/${complaint.issue_id}/status`,
+        {
+          method:  "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status,
+            resolution_note:      resolutionNote || null,
+            resolution_image_url: null,          // image upload in Phase 5
+            changed_by:           currentUser?.user_id || null,
+          }),
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setSaveError(data.message || "Failed to update complaint.");
+        return;
+      }
+
+      setSavedOk(true);
+
+      // Go back to dashboard after short delay
+      setTimeout(() => onBack(), 1200);
+
+    } catch (err) {
+      setSaveError("Could not connect to server. Is the backend running?");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const complaintTitle =
@@ -639,17 +666,30 @@ function AdminComplaintDetails({ complaint, onBack }) {
                 )}
 
 
+
+                {/* ERROR / SUCCESS FEEDBACK */}
+                {saveError && (
+                  <div className="required-message" style={{ borderColor: "#ef4444", background: "rgba(239,68,68,0.08)" }}>
+                    <strong>⚠ Error</strong>
+                    <span>{saveError}</span>
+                  </div>
+                )}
+
+                {savedOk && (
+                  <div className="required-message" style={{ borderColor: "#10b981", background: "rgba(16,185,129,0.08)" }}>
+                    <strong>✅ Saved!</strong>
+                    <span>Complaint updated successfully. Returning to dashboard…</span>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   className="update-complaint-btn"
+                  disabled={saving || savedOk}
+                  style={{ opacity: (saving || savedOk) ? 0.7 : 1 }}
                 >
-
-                  <span>
-                    ✓
-                  </span>
-
-                  Update Complaint
-
+                  <span>{saving ? "⏳" : savedOk ? "✅" : "✓"}</span>
+                  {saving ? "Saving…" : savedOk ? "Saved!" : "Update Complaint"}
                 </button>
 
               </form>

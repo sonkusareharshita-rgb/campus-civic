@@ -506,4 +506,333 @@ router.get("/all", async (req, res) => {
 });
 
 
-module.exports = router;
+// =====================================================
+// GET SINGLE ISSUE
+// GET /api/issues/:id
+// =====================================================
+
+router.get("/:id", async (req, res) => {
+
+    const { id } = req.params;
+
+    try {
+
+        const result = await pool.query(
+            `
+            SELECT
+                i.issue_id,
+                i.reported_by,
+                i.category_id,
+                i.department_id,
+                i.title,
+                i.description,
+                i.location,
+                i.image_url,
+                i.priority,
+                i.status,
+                i.created_at,
+                i.updated_at,
+                i.assigned_to,
+                i.resolution_note,
+                i.resolution_image_url,
+
+                u.name  AS reported_by_name,
+                u.email AS reported_by_email,
+
+                c.category_name,
+
+                d.department_name,
+
+                COUNT(s.user_id) AS report_count
+
+            FROM issues i
+
+            JOIN users u
+                ON i.reported_by = u.user_id
+
+            JOIN categories c
+                ON i.category_id = c.category_id
+
+            LEFT JOIN departments d
+                ON i.department_id = d.department_id
+
+            LEFT JOIN issue_supporters s
+                ON i.issue_id = s.issue_id
+
+            WHERE i.issue_id = $1
+
+            GROUP BY
+                i.issue_id,
+                u.name,
+                u.email,
+                c.category_name,
+                d.department_name
+            `,
+            [id]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({
+                message: "Issue not found"
+            });
+        }
+
+        res.status(200).json({
+            message: "Issue fetched successfully",
+            issue:   result.rows[0]
+        });
+
+    } catch (error) {
+
+        console.error("Get single issue error:", error);
+
+        res.status(500).json({
+            message: "Failed to fetch issue",
+            error:   error.message
+        });
+    }
+
+});
+
+
+// =====================================================
+// UPDATE ISSUE STATUS (ADMIN)
+// PUT /api/issues/:id/status
+// =====================================================
+
+router.put("/:id/status", async (req, res) => {
+
+    const { id } = req.params;
+
+    const {
+        status,
+        resolution_note,
+        resolution_image_url,
+        changed_by
+    } = req.body;
+
+    // ── VALIDATE STATUS ──────────────────────────
+    const VALID_STATUSES = [
+        "PENDING",
+        "APPROVED",
+        "IN_PROGRESS",
+        "RESOLVED",
+        "REJECTED"
+    ];
+
+    if (!status || !VALID_STATUSES.includes(status)) {
+        return res.status(400).json({
+            message: `Status must be one of: ${VALID_STATUSES.join(", ")}`
+        });
+    }
+
+    if (status === "RESOLVED" && !resolution_note?.trim()) {
+        return res.status(400).json({
+            message: "A resolution note is required when marking an issue as RESOLVED"
+        });
+    }
+
+    try {
+
+        // ── GET CURRENT STATUS (for audit trail) ──
+        const current = await pool.query(
+            `SELECT status FROM issues WHERE issue_id = $1`,
+            [id]
+        );
+
+        if (current.rows.length === 0) {
+            return res.status(404).json({
+                message: "Issue not found"
+            });
+        }
+
+        const oldStatus = current.rows[0].status;
+
+        // ── UPDATE ISSUE ─────────────────────────
+        const updated = await pool.query(
+            `
+            UPDATE issues
+            SET
+                status               = $1,
+                resolution_note      = $2,
+                resolution_image_url = $3,
+                updated_at           = NOW()
+            WHERE issue_id = $4
+            RETURNING *
+            `,
+            [
+                status,
+                resolution_note      || null,
+                resolution_image_url || null,
+                id
+            ]
+        );
+
+        // ── WRITE AUDIT TRAIL ────────────────────
+        await pool.query(
+            `
+            INSERT INTO issue_status_history
+                (issue_id, old_status, new_status, changed_by, note)
+            VALUES
+                ($1, $2, $3, $4, $5)
+            `,
+            [
+                id,
+                oldStatus,
+                status,
+                changed_by || null,
+                resolution_note || null
+            ]
+        );
+
+        res.status(200).json({
+            message: `Issue status updated to ${status}`,
+            issue:   updated.rows[0]
+        });
+
+    } catch (error) {
+
+        console.error("Update issue status error:", error);
+
+        res.status(500).json({
+            message: "Failed to update issue status",
+            error:   error.message
+        });
+    }
+
+});
+
+
+// =====================================================
+// GET COMMENTS FOR AN ISSUE
+// GET /api/issues/:id/comments
+// =====================================================
+
+router.get("/:id/comments", async (req, res) => {
+
+    const { id } = req.params;
+
+    try {
+
+        const result = await pool.query(
+            `
+            SELECT
+                ic.comment_id,
+                ic.issue_id,
+                ic.comment,
+                ic.created_at,
+
+                u.user_id,
+                u.name  AS commenter_name,
+                u.role  AS commenter_role
+
+            FROM issue_comments ic
+
+            JOIN users u
+                ON ic.user_id = u.user_id
+
+            WHERE ic.issue_id = $1
+
+            ORDER BY ic.created_at ASC
+            `,
+            [id]
+        );
+
+        res.status(200).json({
+            message:  "Comments fetched successfully",
+            count:    result.rows.length,
+            comments: result.rows
+        });
+
+    } catch (error) {
+
+        console.error("Get comments error:", error);
+
+        res.status(500).json({
+            message: "Failed to fetch comments",
+            error:   error.message
+        });
+    }
+
+});
+
+
+// =====================================================
+// POST A COMMENT ON AN ISSUE
+// POST /api/issues/:id/comments
+// =====================================================
+
+router.post("/:id/comments", async (req, res) => {
+
+    const { id } = req.params;
+
+    const { user_id, comment } = req.body;
+
+    // ── VALIDATE ──────────────────────────────────
+    if (!user_id || !comment?.trim()) {
+        return res.status(400).json({
+            message: "user_id and comment are required"
+        });
+    }
+
+    try {
+
+        // Check issue exists
+        const issue = await pool.query(
+            `SELECT issue_id FROM issues WHERE issue_id = $1`,
+            [id]
+        );
+
+        if (issue.rows.length === 0) {
+            return res.status(404).json({
+                message: "Issue not found"
+            });
+        }
+
+        // Insert comment
+        const result = await pool.query(
+            `
+            INSERT INTO issue_comments
+                (issue_id, user_id, comment)
+            VALUES
+                ($1, $2, $3)
+            RETURNING
+                comment_id,
+                issue_id,
+                comment,
+                created_at
+            `,
+            [id, user_id, comment.trim()]
+        );
+
+        // Return comment with commenter name
+        const commenterResult = await pool.query(
+            `SELECT name, role FROM users WHERE user_id = $1`,
+            [user_id]
+        );
+
+        const newComment = {
+            ...result.rows[0],
+            commenter_name: commenterResult.rows[0]?.name || "Unknown",
+            commenter_role: commenterResult.rows[0]?.role || "STUDENT"
+        };
+
+        res.status(201).json({
+            message: "Comment posted successfully",
+            comment: newComment
+        });
+
+    } catch (error) {
+
+        console.error("Post comment error:", error);
+
+        res.status(500).json({
+            message: "Failed to post comment",
+            error:   error.message
+        });
+    }
+
+});
+
+
+module.exports = router;

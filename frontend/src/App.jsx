@@ -233,6 +233,7 @@ function App() {
       return (
         <AdminComplaintDetails
           complaint={selectedComplaint}
+          currentUser={currentUser}
 
           onBack={() => {
 

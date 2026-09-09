@@ -140,11 +140,10 @@ router.post("/login", async (req, res) => {
                 user_id,
                 name,
                 email,
-                password,
+                password_hash,
                 role,
                 department_id,
-                year,
-                admin_type_id
+                year
              FROM users
              WHERE email = $1`,
             [email]
@@ -161,7 +160,7 @@ router.post("/login", async (req, res) => {
         // Check password
         const passwordMatch = await bcrypt.compare(
             password,
-            user.password
+            user.password_hash
         );
 
         if (!passwordMatch) {
@@ -170,8 +169,8 @@ router.post("/login", async (req, res) => {
             });
         }
 
-        // Never send password to frontend
-        delete user.password;
+        // Never send password hash to frontend
+        delete user.password_hash;
 
         res.json({
             message: "Login successful",
