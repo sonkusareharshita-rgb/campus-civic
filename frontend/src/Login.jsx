@@ -47,22 +47,38 @@ function Login({ onBack, onLoginSuccess, onSignup }) {
       }
 
       const loggedInUser = data.user;
-
       // Check selected role
-      const selectedRole = role.toUpperCase();
-      const actualRole = loggedInUser.role;
 
-      if (selectedRole !== actualRole) {
-        alert(
-          "This account is registered as " +
-            actualRole +
-            ", not " +
-            selectedRole +
-            "."
-        );
+const selectedRole = role.toUpperCase();
+const actualRole = loggedInUser.role;
 
-        return;
-      }
+// Approver is stored as ADMIN in the database
+if (role === "approver") {
+
+  if (
+    actualRole !== "ADMIN" ||
+    loggedInUser.admin_type_id !== 9
+  ) {
+    alert(
+      "This account is not registered as an Approver."
+    );
+    return;
+  }
+
+} else if (selectedRole !== actualRole) {
+
+  alert(
+    "This account is registered as " +
+      actualRole +
+      ", not " +
+      selectedRole +
+      "."
+  );
+
+  return;
+}
+
+    
 
       alert("Login successful!");
 
@@ -301,6 +317,38 @@ function Login({ onBack, onLoginSuccess, onSignup }) {
               )}
 
             </button>
+            {/* Approver */}
+
+<button
+  type="button"
+  className={
+    role === "approver"
+      ? "role-btn active approver-role"
+      : "role-btn"
+  }
+  onClick={() => setRole("approver")}
+>
+  <span className="role-btn-icon">
+    🔍
+  </span>
+
+  <span className="role-btn-text">
+    <strong>
+      Approver
+    </strong>
+
+    <small>
+      Verify & forward complaints
+    </small>
+  </span>
+
+  {role === "approver" && (
+    <span className="role-selected">
+      ✓
+    </span>
+  )}
+</button>
+
 
           </div>
 

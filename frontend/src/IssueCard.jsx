@@ -122,17 +122,23 @@ function IssueCard({
           {status.label}
         </div>
       </div>
-
-      {/* ── IMAGE ── */}
       {issue.image_url && (
-        <div className="issue-card-image-wrap">
-          <img
-            src={issue.image_url}
-            alt={issue.title}
-            className="issue-card-image"
-          />
-        </div>
-      )}
+  <div className="issue-card-image-wrap">
+    <img
+      src={`http://localhost:5000${issue.image_url}`}
+      alt={issue.title}
+      className="issue-card-image"
+      onError={(e) => {
+        console.error(
+          "Image failed to load:",
+          `http://localhost:5000${issue.image_url}`
+        );
+      }}
+    />
+  </div>
+)}
+
+     
 
       {/* ── BODY ── */}
       <div className="issue-card-body">

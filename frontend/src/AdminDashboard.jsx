@@ -1,60 +1,77 @@
-import { useEffect, useState } from 'react'
-import './App.css'
+import { useEffect, useState } from "react";
+import "./App.css";
 
 function AdminDashboard({ onLogout, onComplaintClick }) {
-
-  const [complaints, setComplaints] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [complaints, setComplaints] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchComplaints()
-  }, [])
+    fetchComplaints();
+  }, []);
+
+  // =====================================================
+  // FETCH COMPLAINTS FOR ADMIN
+  // =====================================================
 
   const fetchComplaints = async () => {
+    setLoading(true);
+
     try {
       const response = await fetch(
-        'http://localhost:5000/api/issues/all'
-      )
+        "http://localhost:5000/api/issues/all"
+      );
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (response.ok) {
-        setComplaints(data.issues || [])
+        // Only show complaints that have passed approver
+        const adminComplaints = (data.issues || []).filter(
+          (issue) =>
+            issue.status === "VERIFIED" ||
+            issue.status === "IN_PROGRESS" ||
+            issue.status === "RESOLVED"
+        );
+
+        setComplaints(adminComplaints);
       } else {
-        console.error(data.message)
+        console.error(data.message);
       }
-
     } catch (error) {
-      console.error('Failed to fetch complaints:', error)
+      console.error(
+        "Failed to fetch complaints:",
+        error
+      );
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-
-  // ------------------------------------------
+  // =====================================================
   // STATISTICS
-  // ------------------------------------------
+  // =====================================================
 
-  const totalComplaints = complaints.length
+  const totalComplaints = complaints.length;
 
-  const pendingComplaints = complaints.filter(
-    (issue) => issue.status === 'PENDING'
-  ).length
+  const verifiedComplaints = complaints.filter(
+    (issue) => issue.status === "VERIFIED"
+  ).length;
 
   const progressComplaints = complaints.filter(
-    (issue) => issue.status === 'IN_PROGRESS'
-  ).length
+    (issue) => issue.status === "IN_PROGRESS"
+  ).length;
 
   const resolvedComplaints = complaints.filter(
-    (issue) => issue.status === 'RESOLVED'
-  ).length
+    (issue) => issue.status === "RESOLVED"
+  ).length;
 
+  // =====================================================
+  // UI
+  // =====================================================
 
   return (
     <div className="admin-page">
 
-      {/* ================= NAVBAR ================= */}
+      {/* NAVBAR */}
 
       <nav className="admin-navbar">
 
@@ -65,7 +82,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
         <div className="admin-user">
 
           <span>
-            Admin
+            Administrator
           </span>
 
           <button
@@ -80,10 +97,9 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
       </nav>
 
 
-      {/* ================= MAIN ================= */}
+      {/* MAIN CONTENT */}
 
       <main className="admin-content">
-
 
         {/* HEADING */}
 
@@ -92,7 +108,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
           <div>
 
             <p className="admin-tagline">
-              ADMINISTRATION
+              ADMINISTRATION PORTAL
             </p>
 
             <h1>
@@ -100,8 +116,8 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             </h1>
 
             <p>
-              Manage campus complaints and help resolve
-              student and faculty issues.
+              Manage verified campus complaints and track
+              their resolution progress.
             </p>
 
           </div>
@@ -109,10 +125,11 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
         </div>
 
 
-        {/* ================= STATISTICS ================= */}
+        {/* STATISTICS */}
 
         <section className="admin-stats">
 
+          {/* TOTAL */}
 
           <div className="admin-stat-card">
 
@@ -135,26 +152,30 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
           </div>
 
 
+          {/* VERIFIED */}
+
           <div className="admin-stat-card">
 
             <div className="stat-icon">
-              ⏳
+              🔎
             </div>
 
             <div>
 
               <strong>
-                {pendingComplaints}
+                {verifiedComplaints}
               </strong>
 
               <span>
-                Pending
+                Awaiting Action
               </span>
 
             </div>
 
           </div>
 
+
+          {/* IN PROGRESS */}
 
           <div className="admin-stat-card">
 
@@ -176,6 +197,8 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
 
           </div>
 
+
+          {/* RESOLVED */}
 
           <div className="admin-stat-card">
 
@@ -200,7 +223,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
         </section>
 
 
-        {/* ================= QUICK ACTIONS ================= */}
+        {/* QUICK ACTIONS */}
 
         <section className="admin-section">
 
@@ -215,6 +238,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
 
           <div className="admin-actions">
 
+            {/* REFRESH */}
 
             <button
               className="admin-action-card"
@@ -222,7 +246,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             >
 
               <span>
-                📥
+                🔄
               </span>
 
               <div>
@@ -232,13 +256,15 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
                 </strong>
 
                 <small>
-                  Get latest complaints
+                  Get latest verified complaints
                 </small>
 
               </div>
 
             </button>
 
+
+            {/* HIGH PRIORITY */}
 
             <button
               className="admin-action-card"
@@ -247,16 +273,14 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
                 const highPriority =
                   complaints.filter(
                     (issue) =>
-                      issue.priority === 'HIGH'
-                  )
+                      issue.priority === "HIGH"
+                  );
 
-                if (highPriority.length === 0) {
-                  alert('No high priority complaints.')
-                } else {
-                  alert(
-                    `${highPriority.length} high priority complaint(s) found.`
-                  )
-                }
+                alert(
+                  highPriority.length === 0
+                    ? "No high priority complaints."
+                    : `${highPriority.length} high priority complaint(s) found.`
+                );
 
               }}
             >
@@ -280,83 +304,92 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             </button>
 
 
+            {/* AWAITING ACTION */}
+
             <button
               className="admin-action-card"
               onClick={() => {
 
-                const pending =
-                  complaints.filter(
-                    (issue) =>
-                      issue.status === 'PENDING'
-                  )
-
                 alert(
-                  `${pending.length} complaint(s) are pending.`
-                )
+                  `${verifiedComplaints} complaint(s) are awaiting administrative action.`
+                );
 
               }}
             >
 
               <span>
-                🕐
+                ⏳
               </span>
 
               <div>
 
                 <strong>
-                  Pending Issues
+                  Awaiting Action
                 </strong>
 
                 <small>
-                  Complaints waiting for action
+                  Verified by approver
                 </small>
 
               </div>
 
             </button>
 
+
+            {/* RESOLVED */}
 
             <button
               className="admin-action-card"
-              onClick={() =>
-                alert('Comments section coming next.')
-              }
+              onClick={() => {
+
+                alert(
+                  `${resolvedComplaints} complaint(s) have been resolved.`
+                );
+
+              }}
             >
 
               <span>
-                💬
+                ✅
               </span>
 
               <div>
 
                 <strong>
-                  Comments
+                  Resolved Issues
                 </strong>
 
                 <small>
-                  Respond to users
+                  Successfully completed
                 </small>
 
               </div>
 
             </button>
-
 
           </div>
 
         </section>
 
 
-        {/* ================= RECENT COMPLAINTS ================= */}
+        {/* RECENT COMPLAINTS */}
 
         <section className="admin-section">
 
-
           <div className="section-title">
 
-            <h2>
-              Recent Complaints
-            </h2>
+            <div>
+
+              <h2>
+                Verified Complaints
+              </h2>
+
+              <p>
+                Complaints approved by the verification team
+              </p>
+
+            </div>
+
 
             <button
               className="view-all-btn"
@@ -370,6 +403,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
 
           <div className="complaint-table">
 
+            {/* TABLE HEADER */}
 
             <div className="table-header">
 
@@ -397,17 +431,16 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             {loading && (
 
               <div className="empty-complaints">
-
                 Loading complaints...
-
               </div>
 
             )}
 
 
-            {/* NO COMPLAINTS */}
+            {/* EMPTY */}
 
-            {!loading && complaints.length === 0 && (
+            {!loading &&
+              complaints.length === 0 && (
 
               <div className="empty-complaints">
 
@@ -416,11 +449,12 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
                 </div>
 
                 <strong>
-                  No complaints found
+                  No verified complaints
                 </strong>
 
                 <p>
-                  New complaints will appear here.
+                  Complaints approved by the approver
+                  will appear here.
                 </p>
 
               </div>
@@ -428,77 +462,92 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             )}
 
 
-            {/* COMPLAINTS */}
+            {/* COMPLAINT LIST */}
 
             {!loading &&
               complaints.map((issue) => (
 
-                <div
-                  className="complaint-row complaint-clickable"
-                  key={issue.issue_id}
-                  onClick={() =>
-                    onComplaintClick(issue)
-                  }
-                >
+              <div
+                className="complaint-row complaint-clickable"
 
+                key={issue.issue_id}
 
-                  <div>
+                onClick={() =>
+                  onComplaintClick(issue)
+                }
+              >
 
-                    <strong>
-                      {issue.title}
-                    </strong>
+                {/* TITLE */}
 
-                    <small>
-                      📍 {issue.location}
-                    </small>
+                <div>
 
-                  </div>
+                  <strong>
+                    {issue.title}
+                  </strong>
 
-
-                  <span>
-                    {issue.category_name || 'General'}
-                  </span>
-
-
-                  <span
-                    className={`priority ${
-                      issue.priority?.toLowerCase() ||
-                      'medium'
-                    }`}
-                  >
-                    {issue.priority || 'MEDIUM'}
-                  </span>
-
-
-                  <span
-                    className={`status ${
-                      issue.status === 'RESOLVED'
-                        ? 'resolved-status'
-                        : issue.status === 'IN_PROGRESS'
-                        ? 'progress-status'
-                        : 'pending-status'
-                    }`}
-                  >
-                    {issue.status
-                      ? issue.status.replace('_', ' ')
-                      : 'PENDING'}
-                  </span>
-
+                  <small>
+                    📍 {issue.location}
+                  </small>
 
                 </div>
 
-              ))}
 
+                {/* CATEGORY */}
+
+                <span>
+                  {issue.category_name ||
+                    "General"}
+                </span>
+
+
+                {/* PRIORITY */}
+
+                <span
+                  className={`priority ${
+                    issue.priority?.toLowerCase() ||
+                    "medium"
+                  }`}
+                >
+
+                  {issue.priority ||
+                    "MEDIUM"}
+
+                </span>
+
+
+                {/* STATUS */}
+
+                <span
+                  className={`status ${
+                    issue.status === "RESOLVED"
+                      ? "resolved-status"
+                      : issue.status === "IN_PROGRESS"
+                      ? "progress-status"
+                      : "pending-status"
+                  }`}
+                >
+
+                  {issue.status === "VERIFIED"
+                    ? "VERIFIED"
+                    : issue.status?.replace(
+                        "_",
+                        " "
+                      )}
+
+                </span>
+
+              </div>
+
+            ))}
 
           </div>
 
         </section>
 
-
       </main>
 
     </div>
-  )
+  );
 }
 
-export default AdminDashboard
+export default AdminDashboard;
