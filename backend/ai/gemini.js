@@ -1,11 +1,11 @@
 // =============================================================
 //  backend/ai/gemini.js
-//  Central AI service — all Gemini calls go through here
+//  Central AI service ï¿½ all Gemini calls go through here
 // =============================================================
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-// -- Initialise client (lazy — only when key is present) ------
+// -- Initialise client (lazy ï¿½ only when key is present) ------
 let genAI = null;
 let model = null;
 
@@ -15,7 +15,7 @@ function getModel() {
     }
     if (!model) {
         genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
     }
     return model;
 }

@@ -96,7 +96,7 @@ router.post("/register", async (req, res) => {
                 hashedPassword,
                 userRole,
                 department_id,
-                userRole === "STUDENT" ? year : null,
+                userRole === "STUDENT" ? (parseInt(year) || null) : null,
                 null
             ]
         );
@@ -140,7 +140,7 @@ router.post("/login", async (req, res) => {
                 user_id,
                 name,
                 email,
-                password_hash,
+                password,
                 role,
                 department_id,
                 year
@@ -160,7 +160,7 @@ router.post("/login", async (req, res) => {
         // Check password
         const passwordMatch = await bcrypt.compare(
             password,
-            user.password_hash
+            user.password
         );
 
         if (!passwordMatch) {
@@ -170,7 +170,7 @@ router.post("/login", async (req, res) => {
         }
 
         // Never send password hash to frontend
-        delete user.password_hash;
+        delete user.password;
 
         res.json({
             message: "Login successful",
