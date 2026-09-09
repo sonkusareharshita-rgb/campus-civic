@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import "./App.css";
 
 const STATUS_STEPS = [
@@ -13,6 +14,8 @@ const STATUS_CONFIG = {
   PENDING:     { label: "Pending",     color: "#f59e0b", bg: "rgba(245,158,11,0.12)" },
   IN_PROGRESS: { label: "In Progress", color: "#3b82f6", bg: "rgba(59,130,246,0.12)" },
   RESOLVED:    { label: "Resolved",    color: "#10b981", bg: "rgba(16,185,129,0.12)" },
+  APPROVED:    { label: "Approved",    color: "#8b5cf6", bg: "rgba(139,92,246,0.12)" },
+  REJECTED:    { label: "Rejected",    color: "#ef4444", bg: "rgba(239,68,68,0.12)" },
 };
 
 function timeAgo(dateString) {
@@ -38,10 +41,66 @@ function IssueDetail({
   const alreadyUpvoted  = upvotedIds.includes(issue.issue_id);
   const currentStepIdx  = STATUS_ORDER.indexOf(issue.status);
 
+  // ── COMMENTS STATE ────────────────────────────────
+  const [comments,     setComments]     = useState([]);
+  const [commentText,  setCommentText]  = useState("");
+  const [loadingComments, setLoadingComments] = useState(true);
+  const [postingComment,  setPostingComment]  = useState(false);
+
+  useEffect(() => {
+    async function fetchComments() {
+      try {
+        const res  = await fetch(`http://localhost:5000/api/issues/${issue.issue_id}/comments`);
+        const data = await res.json();
+        if (res.ok) setComments(data.comments || []);
+      } catch {
+        // silently fail — comments are supplementary
+      } finally {
+        setLoadingComments(false);
+      }
+    }
+    fetchComments();
+  }, [issue.issue_id]);
+
   const handleUpvote = () => {
     if (!currentUser) { onLoginPrompt?.(); return; }
     if (alreadyUpvoted) return;
     onUpvote?.(issue.issue_id);
+  };
+
+  const handlePostComment = async (e) => {
+    e.preventDefault();
+    if (!commentText.trim()) return;
+
+    setPostingComment(true);
+    try {
+      const res  = await fetch(
+        `http://localhost:5000/api/issues/${issue.issue_id}/comments`,
+        {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: currentUser.user_id,
+            comment: commentText.trim(),
+          }),
+        }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setComments((prev) => [...prev, data.comment]);
+        setCommentText("");
+      }
+    } catch {
+      // fail silently
+    } finally {
+      setPostingComment(false);
+    }
+  };
+
+  const roleLabel = (role) => {
+    if (role === "FACULTY") return "Faculty";
+    if (role === "ADMIN")   return "Admin";
+    return "Student";
   };
 
   return (
@@ -141,9 +200,91 @@ function IssueDetail({
           </div>
         )}
 
+        {/* ── COMMENTS ── */}
+        <div className="detail-comments">
+          <h3 className="detail-section-title">
+            Comments
+            {comments.length > 0 && (
+              <span className="comments-count">{comments.length}</span>
+            )}
+          </h3>
+
+          {/* Comment list */}
+          {loadingComments ? (
+            <div className="comments-loading">Loading comments…</div>
+          ) : comments.length === 0 ? (
+            <div className="comments-empty">
+              <span>💬</span>
+              <p>No comments yet. Be the first to add context or an update.</p>
+            </div>
+          ) : (
+            <div className="comments-list">
+              {comments.map((c) => (
+                <div key={c.comment_id} className="comment-item">
+                  <div className="comment-avatar">
+                    {(c.commenter_name || "?")[0].toUpperCase()}
+                  </div>
+                  <div className="comment-body">
+                    <div className="comment-header">
+                      <strong className="comment-name">{c.commenter_name}</strong>
+                      <span
+                        className="comment-role-badge"
+                        data-role={c.commenter_role}
+                      >
+                        {roleLabel(c.commenter_role)}
+                      </span>
+                      <span className="comment-time">{timeAgo(c.created_at)}</span>
+                    </div>
+                    <p className="comment-text">{c.comment}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Post a comment */}
+          {currentUser ? (
+            <form className="comment-form" onSubmit={handlePostComment}>
+              <div className="comment-input-wrap">
+                <div className="comment-form-avatar">
+                  {(currentUser.name || "?")[0].toUpperCase()}
+                </div>
+                <textarea
+                  className="comment-input"
+                  placeholder="Add a comment…"
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  rows={2}
+                  maxLength={500}
+                />
+              </div>
+              <div className="comment-form-actions">
+                <span className="comment-char-count">
+                  {commentText.length}/500
+                </span>
+                <button
+                  type="submit"
+                  className="comment-submit-btn"
+                  disabled={!commentText.trim() || postingComment}
+                >
+                  {postingComment ? "Posting…" : "Post Comment"}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              className="comment-login-prompt"
+              onClick={() => onLoginPrompt?.()}
+            >
+              🔐 Login to add a comment
+            </button>
+          )}
+        </div>
+
       </div>
     </div>
   );
 }
 
 export default IssueDetail;
+

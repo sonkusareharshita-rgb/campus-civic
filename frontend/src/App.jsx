@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 
 import Feed from "./Feed";
@@ -8,15 +9,10 @@ import IssueDetail from "./IssueDetail";
 import Login from "./Login";
 import Signup from "./Signup";
 import BottomNav from "./BottomNav";
-
 import AdminDashboard from "./AdminDashboard";
 import AdminComplaintDetails from "./AdminComplaintDetails";
 
-import ApproverDashboard from "./ApproverDashboard";
-import ApproverComplaintDetails from "./ApproverComplaintDetails";
-
 import "./App.css";
-
 function App() {
 
   // =====================================================
@@ -25,7 +21,6 @@ function App() {
 
   const [currentUser, setCurrentUser] = useState(null);
 
-
   // =====================================================
   // NAVIGATION
   // =====================================================
@@ -33,24 +28,19 @@ function App() {
   const [activePage, setActivePage] = useState("feed");
   const [prevPage, setPrevPage] = useState("feed");
 
-
   // =====================================================
   // ISSUE DETAIL
   // =====================================================
 
   const [selectedIssue, setSelectedIssue] = useState(null);
 
-
   // =====================================================
-  // COMPLAINT DETAILS
+  // ADMIN
   // =====================================================
 
-  const [selectedComplaint, setSelectedComplaint] =
-    useState(null);
-
+  const [selectedComplaint, setSelectedComplaint] = useState(null);
   const [showComplaintDetails, setShowComplaintDetails] =
     useState(false);
-
 
   // =====================================================
   // UPVOTES
@@ -58,19 +48,14 @@ function App() {
 
   const [upvotedIds, setUpvotedIds] = useState([]);
 
-
   // =====================================================
   // NAVIGATION HANDLER
   // =====================================================
 
   function navigate(page) {
-
     setPrevPage(activePage);
-
     setActivePage(page);
-
   }
-
 
   // =====================================================
   // LOGIN SUCCESS
@@ -80,35 +65,12 @@ function App() {
 
     setCurrentUser(user);
 
-
-    // APPROVER
-    if (
-      user.role === "ADMIN" &&
-      Number(user.admin_type_id) === 9
-    ) {
-
-      setActivePage("approver");
-
-    }
-
-
-    // NORMAL ADMIN
-    else if (user.role === "ADMIN") {
-
+    if (user.role === "ADMIN") {
       setActivePage("admin");
-
-    }
-
-
-    // STUDENT / FACULTY
-    else {
-
+    } else {
       setActivePage("feed");
-
     }
-
   }
-
 
   // =====================================================
   // LOGOUT
@@ -117,19 +79,13 @@ function App() {
   function handleLogout() {
 
     setCurrentUser(null);
-
     setUpvotedIds([]);
-
     setSelectedIssue(null);
-
     setSelectedComplaint(null);
-
     setShowComplaintDetails(false);
 
     setActivePage("feed");
-
   }
-
 
   // =====================================================
   // ISSUE CARD CLICK
@@ -140,9 +96,7 @@ function App() {
     setSelectedIssue(issue);
 
     navigate("detail");
-
   }
-
 
   // =====================================================
   // LOGIN PROMPT
@@ -151,140 +105,89 @@ function App() {
   function handleLoginPrompt() {
 
     navigate("login");
-
   }
 
-
   // =====================================================
-  // SIGNUP
+  // OPEN SIGNUP
   // =====================================================
 
   function handleSignup() {
 
     navigate("signup");
-
   }
 
-
   // =====================================================
-  // UPVOTE
+  // UPVOTE / SUPPORT ISSUE
   // =====================================================
 
   async function handleUpvote(issueId) {
 
     if (!currentUser) {
-
       navigate("login");
-
       return;
-
     }
-
 
     if (upvotedIds.includes(issueId)) {
-
       return;
-
     }
-
 
     try {
 
       const response = await fetch(
-
         `http://localhost:5000/api/issues/${issueId}/support`,
-
         {
-
           method: "POST",
 
           headers: {
-
-            "Content-Type":
-              "application/json",
-
+            "Content-Type": "application/json",
           },
 
           body: JSON.stringify({
-
-            reported_by:
-              currentUser.user_id,
-
+            reported_by: currentUser.user_id,
           }),
-
         }
-
       );
 
-
-      const data =
-        await response.json();
-
+      const data = await response.json();
 
       if (response.ok) {
 
         setUpvotedIds((prev) => [
-
           ...prev,
-
           issueId,
-
         ]);
 
-
+        // Update selected issue count
         if (
-
           selectedIssue &&
-
-          selectedIssue.issue_id ===
-            issueId
-
+          selectedIssue.issue_id === issueId
         ) {
 
           setSelectedIssue((prev) => ({
-
             ...prev,
-
             report_count:
-
-              Number(
-                prev.report_count || 0
-              ) + 1,
-
+              Number(prev.report_count || 0) + 1,
           }));
-
         }
 
-      }
-
-      else {
+      } else {
 
         console.error(
-
           "Support error:",
-
           data.message
-
         );
 
       }
 
-    }
-
-    catch (error) {
+    } catch (error) {
 
       console.error(
-
         "Upvote error:",
-
         error
-
       );
 
     }
-
   }
-
 
   // =====================================================
   // REPORT SUCCESS
@@ -293,9 +196,7 @@ function App() {
   function handleReportSuccess() {
 
     setActivePage("feed");
-
   }
-
 
   // =====================================================
   // SHARED PROPS
@@ -318,219 +219,76 @@ function App() {
 
   };
 
-
-  // =====================================================
-  // APPROVER FLOW
-  // =====================================================
-
-  if (activePage === "approver") {
-
-
-    // APPROVER COMPLAINT DETAILS
-
-    if (
-
-      showComplaintDetails &&
-
-      selectedComplaint
-
-    ) {
-
-      return (
-
-        <ApproverComplaintDetails
-
-          complaint={
-            selectedComplaint
-          }
-
-          currentUser={
-            currentUser
-          }
-
-          onBack={() => {
-
-            setShowComplaintDetails(
-              false
-            );
-
-            setSelectedComplaint(
-              null
-            );
-
-          }}
-
-          onUpdate={() => {
-
-            setShowComplaintDetails(
-              false
-            );
-
-            setSelectedComplaint(
-              null
-            );
-
-          }}
-
-        />
-
-      );
-
-    }
-
-
-    // APPROVER DASHBOARD
-
-    return (
-
-      <ApproverDashboard
-
-        user={
-          currentUser
-        }
-
-        onLogout={
-          handleLogout
-        }
-
-        onComplaintClick={
-
-          (complaint) => {
-
-            setSelectedComplaint(
-              complaint
-            );
-
-            setShowComplaintDetails(
-              true
-            );
-
-          }
-
-        }
-
-      />
-
-    );
-
-  }
-
-
   // =====================================================
   // ADMIN FLOW
   // =====================================================
 
   if (activePage === "admin") {
 
-
-    // ADMIN COMPLAINT DETAILS
-
     if (
-
       showComplaintDetails &&
-
       selectedComplaint
-
     ) {
 
       return (
-
         <AdminComplaintDetails
-
-          complaint={
-            selectedComplaint
-          }
+          complaint={selectedComplaint}
+          currentUser={currentUser}
 
           onBack={() => {
 
-            setShowComplaintDetails(
-              false
-            );
+            setShowComplaintDetails(false);
 
-            setSelectedComplaint(
-              null
-            );
+            setSelectedComplaint(null);
 
           }}
-
         />
-
       );
 
     }
 
-
-    // ADMIN DASHBOARD
-
     return (
-
       <AdminDashboard
 
-        onLogout={
-          handleLogout
-        }
+        onLogout={handleLogout}
 
-        onComplaintClick={
+        onComplaintClick={(complaint) => {
 
-          (complaint) => {
+          setSelectedComplaint(
+            complaint
+          );
 
-            setSelectedComplaint(
-              complaint
-            );
+          setShowComplaintDetails(true);
 
-            setShowComplaintDetails(
-              true
-            );
-
-          }
-
-        }
+        }}
 
       />
-
     );
-
   }
-
 
   // =====================================================
   // LOGIN
   // =====================================================
 
   if (activePage === "login") {
+  return (
+    <Login
+      onBack={() =>
+        navigate(
+          prevPage === "login"
+            ? "feed"
+            : prevPage
+        )
+      }
 
-    return (
+      onLoginSuccess={handleLoginSuccess}
 
-      <Login
-
-        onBack={() =>
-
-          navigate(
-
-            prevPage === "login"
-
-              ? "feed"
-
-              : prevPage
-
-          )
-
-        }
-
-        onLoginSuccess={
-          handleLoginSuccess
-        }
-
-        onSignup={() =>
-          navigate("signup")
-        }
-
-      />
-
-    );
-
-  }
-
+      onSignup={() =>
+        navigate("signup")
+      }
+    />
+  );
+}
 
   // =====================================================
   // SIGNUP
@@ -539,7 +297,6 @@ function App() {
   if (activePage === "signup") {
 
     return (
-
       <Signup
 
         onBack={() =>
@@ -555,31 +312,22 @@ function App() {
         }
 
       />
-
     );
-
   }
-
 
   // =====================================================
   // ISSUE DETAIL
   // =====================================================
 
   if (
-
     activePage === "detail" &&
-
     selectedIssue
-
   ) {
 
     return (
-
       <IssueDetail
 
-        issue={
-          selectedIssue
-        }
+        issue={selectedIssue}
 
         currentUser={
           currentUser
@@ -602,11 +350,8 @@ function App() {
         }
 
       />
-
     );
-
   }
-
 
   // =====================================================
   // REPORT ISSUE
@@ -615,9 +360,7 @@ function App() {
   if (activePage === "report") {
 
     return (
-
       <div className="app-shell">
-
 
         <div className="page-content">
 
@@ -639,7 +382,6 @@ function App() {
 
         </div>
 
-
         <BottomNav
 
           activePage={
@@ -656,25 +398,18 @@ function App() {
 
         />
 
-
       </div>
-
     );
-
   }
-
 
   // =====================================================
   // MAIN APP
   // =====================================================
 
   return (
-
     <div className="app-shell">
 
-
       <div className="page-content">
-
 
         {/* FEED */}
 
@@ -686,7 +421,6 @@ function App() {
 
         )}
 
-
         {/* EXPLORE */}
 
         {activePage === "explore" && (
@@ -697,11 +431,9 @@ function App() {
 
         )}
 
-
         {/* PROFILE */}
 
         {activePage === "profile" &&
-
           currentUser && (
 
             <Profile
@@ -716,7 +448,6 @@ function App() {
 
           )}
 
-
         {/* ALERTS */}
 
         {activePage === "alerts" && (
@@ -726,25 +457,16 @@ function App() {
             <div className="feed-empty">
 
               <div className="feed-empty-icon">
-
                 🔔
-
               </div>
 
-
               <h3>
-
                 Alerts
-
               </h3>
 
-
               <p>
-
                 Notifications coming soon.
-
               </p>
-
 
             </div>
 
@@ -752,9 +474,7 @@ function App() {
 
         )}
 
-
       </div>
-
 
       {/* BOTTOM NAVIGATION */}
 
@@ -774,11 +494,8 @@ function App() {
 
       />
 
-
     </div>
-
   );
-
 }
 
 export default App;

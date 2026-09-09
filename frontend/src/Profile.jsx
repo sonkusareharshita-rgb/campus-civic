@@ -17,6 +17,7 @@ function Profile({
   upvotedIds = [],
 }) {
   const [myIssues,    setMyIssues]    = useState([]);
+  const [allIssues,   setAllIssues]   = useState([]);   // needed for Supported tab
   const [loading,     setLoading]     = useState(true);
   const [activeTab,   setActiveTab]   = useState("reported");
 
@@ -30,6 +31,8 @@ function Profile({
       const data = await res.json();
       const all  = data.issues || [];
 
+      setAllIssues(all);
+
       // Filter by current user
       const mine = all.filter(
         (i) => String(i.reported_by) === String(currentUser.user_id)
@@ -37,6 +40,7 @@ function Profile({
       setMyIssues(mine);
     } catch {
       setMyIssues([]);
+      setAllIssues([]);
     } finally {
       setLoading(false);
     }
@@ -65,8 +69,10 @@ function Profile({
     currentUser?.role === "FACULTY" ? "Faculty" :
     currentUser?.role === "ADMIN"   ? "Admin"   : "Student";
 
-  // Issues shown in "My Issues" tab
-  const tabIssues = activeTab === "reported" ? myIssues : [];
+  // Issues shown in "Supported" tab — filter all issues by upvotedIds
+  const supportedIssues = allIssues.filter((i) =>
+    upvotedIds.includes(i.issue_id)
+  );
 
   return (
     <div className="profile-page">
@@ -154,16 +160,24 @@ function Profile({
           )
         ) : (
           /* Supported tab */
-          upvotedIds.length === 0 ? (
+          supportedIssues.length === 0 ? (
             <div className="feed-empty">
               <div className="feed-empty-icon">▲</div>
               <h3>No supported issues yet</h3>
               <p>Upvote issues in the feed to support them.</p>
             </div>
           ) : (
-            <div className="feed-empty">
-              <p>You have supported {upvotedIds.length} issue{upvotedIds.length !== 1 ? "s" : ""}.</p>
-            </div>
+            supportedIssues.map((issue) => (
+              <IssueCard
+                key={issue.issue_id}
+                issue={issue}
+                currentUser={currentUser}
+                onUpvote={onUpvote}
+                onCardClick={onCardClick}
+                onLoginPrompt={onLoginPrompt}
+                upvotedIds={upvotedIds}
+              />
+            ))
           )
         )}
       </div>
