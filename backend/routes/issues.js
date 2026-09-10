@@ -260,13 +260,7 @@ router.post("/analyze", async (req, res) => {
             return res.status(400).json({ message: "title and description are required" });
         }
 
-        // Run all AI analyses in parallel for speed
-        const [priorityResult, categoryResult] = await Promise.all([
-            ai.scorePriority(title, description, null),
-            ai.detectCategory(title, description),
-        ]);
-
-        // Check for duplicates
+        // Fetch open issues for duplicate detection
         const openResult = await pool.query(
             `SELECT i.issue_id, i.title, i.description, i.location
              FROM issues i
@@ -275,16 +269,18 @@ router.post("/analyze", async (req, res) => {
              LIMIT 50`
         );
 
-        const duplicateResult = await ai.detectDuplicate(
-            { title, description, location: location || "" },
+        const analysis = await ai.analyzeIssue(
+            title,
+            description,
+            location || "",
             openResult.rows
         );
 
         res.json({
             ai_enabled: true,
-            suggested_priority: priorityResult,
-            suggested_category: categoryResult,
-            duplicate_check: duplicateResult,
+            suggested_priority: analysis.suggested_priority,
+            suggested_category: analysis.suggested_category,
+            duplicate_check: analysis.duplicate_check,
         });
 
     } catch (error) {
