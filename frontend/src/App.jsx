@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 import Feed from "./Feed";
 import Explore from "./Explore";
@@ -9,10 +8,16 @@ import IssueDetail from "./IssueDetail";
 import Login from "./Login";
 import Signup from "./Signup";
 import BottomNav from "./BottomNav";
+
 import AdminDashboard from "./AdminDashboard";
 import AdminComplaintDetails from "./AdminComplaintDetails";
 
+import ApproverDashboard from "./ApproverDashboard";
+import ApproverComplaintDetails from "./ApproverComplaintDetails";
+
 import "./App.css";
+
+
 function App() {
 
   // =====================================================
@@ -21,41 +26,120 @@ function App() {
 
   const [currentUser, setCurrentUser] = useState(null);
 
+
+  // =====================================================
+  // NOTIFICATIONS
+  // =====================================================
+
+  const [notifications, setNotifications] = useState([]);
+
+
+  useEffect(() => {
+
+    if (!currentUser?.user_id) {
+
+      setNotifications([]);
+
+      return;
+    }
+
+
+    const fetchNotifications = async () => {
+
+      try {
+
+        const response = await fetch(
+          `http://localhost:5000/api/issues/notifications/${currentUser.user_id}`
+        );
+
+
+        const data = await response.json();
+
+
+        if (response.ok) {
+
+          setNotifications(
+            Array.isArray(data)
+              ? data
+              : []
+          );
+
+        } else {
+
+          console.error(
+            "Notification fetch error:",
+            data.message
+          );
+
+        }
+
+      } catch (error) {
+
+        console.error(
+          "Notification fetch error:",
+          error
+        );
+
+      }
+
+    };
+
+
+    fetchNotifications();
+
+  }, [currentUser?.user_id]);
+
+
   // =====================================================
   // NAVIGATION
   // =====================================================
 
-  const [activePage, setActivePage] = useState("feed");
-  const [prevPage, setPrevPage] = useState("feed");
+  const [activePage, setActivePage] =
+    useState("feed");
+
+  const [prevPage, setPrevPage] =
+    useState("feed");
+
 
   // =====================================================
   // ISSUE DETAIL
   // =====================================================
 
-  const [selectedIssue, setSelectedIssue] = useState(null);
+  const [selectedIssue, setSelectedIssue] =
+    useState(null);
+
 
   // =====================================================
-  // ADMIN
+  // ADMIN / APPROVER
   // =====================================================
 
-  const [selectedComplaint, setSelectedComplaint] = useState(null);
+  const [selectedComplaint, setSelectedComplaint] =
+    useState(null);
+
   const [showComplaintDetails, setShowComplaintDetails] =
     useState(false);
+
 
   // =====================================================
   // UPVOTES
   // =====================================================
 
-  const [upvotedIds, setUpvotedIds] = useState([]);
+  const [upvotedIds, setUpvotedIds] =
+    useState([]);
+
 
   // =====================================================
   // NAVIGATION HANDLER
   // =====================================================
 
   function navigate(page) {
+
     setPrevPage(activePage);
+
     setActivePage(page);
+
   }
+
 
   // =====================================================
   // LOGIN SUCCESS
@@ -63,14 +147,52 @@ function App() {
 
   function handleLoginSuccess(user) {
 
+    console.log(
+      "LOGGED IN USER:",
+      user
+    );
+
+
     setCurrentUser(user);
 
-    if (user.role === "ADMIN") {
-      setActivePage("admin");
-    } else {
-      setActivePage("feed");
+
+    // ---------------------------------------------------
+    // APPROVER
+    // ---------------------------------------------------
+
+    if (
+      user?.role === "ADMIN" &&
+      Number(user?.admin_type_id) === 9
+    ) {
+
+      setActivePage("approver");
+
+      return;
+
     }
+
+
+    // ---------------------------------------------------
+    // NORMAL ADMIN
+    // ---------------------------------------------------
+
+    if (user?.role === "ADMIN") {
+
+      setActivePage("admin");
+
+      return;
+
+    }
+
+
+    // ---------------------------------------------------
+    // STUDENT / FACULTY
+    // ---------------------------------------------------
+
+    setActivePage("feed");
+
   }
+
 
   // =====================================================
   // LOGOUT
@@ -79,13 +201,23 @@ function App() {
   function handleLogout() {
 
     setCurrentUser(null);
+
+    setNotifications([]);
+
     setUpvotedIds([]);
+
     setSelectedIssue(null);
+
     setSelectedComplaint(null);
+
     setShowComplaintDetails(false);
 
     setActivePage("feed");
+
+    setPrevPage("feed");
+
   }
+
 
   // =====================================================
   // ISSUE CARD CLICK
@@ -96,7 +228,9 @@ function App() {
     setSelectedIssue(issue);
 
     navigate("detail");
+
   }
+
 
   // =====================================================
   // LOGIN PROMPT
@@ -105,7 +239,9 @@ function App() {
   function handleLoginPrompt() {
 
     navigate("login");
+
   }
+
 
   // =====================================================
   // OPEN SIGNUP
@@ -114,7 +250,9 @@ function App() {
   function handleSignup() {
 
     navigate("signup");
+
   }
+
 
   // =====================================================
   // UPVOTE / SUPPORT ISSUE
@@ -123,13 +261,20 @@ function App() {
   async function handleUpvote(issueId) {
 
     if (!currentUser) {
+
       navigate("login");
+
       return;
+
     }
 
+
     if (upvotedIds.includes(issueId)) {
+
       return;
+
     }
+
 
     try {
 
@@ -148,7 +293,9 @@ function App() {
         }
       );
 
+
       const data = await response.json();
+
 
       if (response.ok) {
 
@@ -157,17 +304,25 @@ function App() {
           issueId,
         ]);
 
-        // Update selected issue count
+
+        // ------------------------------------------------
+        // UPDATE SELECTED ISSUE COUNT
+        // ------------------------------------------------
+
         if (
           selectedIssue &&
           selectedIssue.issue_id === issueId
         ) {
 
           setSelectedIssue((prev) => ({
+
             ...prev,
+
             report_count:
               Number(prev.report_count || 0) + 1,
+
           }));
+
         }
 
       } else {
@@ -187,7 +342,9 @@ function App() {
       );
 
     }
+
   }
+
 
   // =====================================================
   // REPORT SUCCESS
@@ -196,7 +353,9 @@ function App() {
   function handleReportSuccess() {
 
     setActivePage("feed");
+
   }
+
 
   // =====================================================
   // SHARED PROPS
@@ -219,11 +378,16 @@ function App() {
 
   };
 
+
   // =====================================================
-  // ADMIN FLOW
+  // APPROVER FLOW
   // =====================================================
 
-  if (activePage === "admin") {
+  if (activePage === "approver") {
+
+    // ---------------------------------------------------
+    // APPROVER COMPLAINT DETAILS
+    // ---------------------------------------------------
 
     if (
       showComplaintDetails &&
@@ -231,9 +395,17 @@ function App() {
     ) {
 
       return (
-        <AdminComplaintDetails
-          complaint={selectedComplaint}
-          currentUser={currentUser}
+
+        <ApproverComplaintDetails
+
+          complaint={
+            selectedComplaint
+          }
+
+          currentUser={
+            currentUser
+          }
+
 
           onBack={() => {
 
@@ -242,53 +414,191 @@ function App() {
             setSelectedComplaint(null);
 
           }}
+
+
+          onUpdate={() => {
+
+            setShowComplaintDetails(false);
+
+            setSelectedComplaint(null);
+
+          }}
+
         />
+
       );
 
     }
 
-    return (
-      <AdminDashboard
 
-        onLogout={handleLogout}
+    // ---------------------------------------------------
+    // APPROVER DASHBOARD
+    // ---------------------------------------------------
+
+    return (
+
+      <ApproverDashboard
+
+        user={
+          currentUser
+        }
+
+        onLogout={
+          handleLogout
+        }
+
 
         onComplaintClick={(complaint) => {
+
+          console.log(
+            "APPROVER COMPLAINT SELECTED:",
+            complaint
+          );
+
 
           setSelectedComplaint(
             complaint
           );
 
-          setShowComplaintDetails(true);
+
+          setShowComplaintDetails(
+            true
+          );
 
         }}
 
       />
+
     );
+
   }
+
+
+  // =====================================================
+  // ADMIN FLOW
+  // =====================================================
+
+  if (activePage === "admin") {
+
+    // ---------------------------------------------------
+    // ADMIN COMPLAINT DETAILS
+    // ---------------------------------------------------
+
+    if (
+      showComplaintDetails &&
+      selectedComplaint
+    ) {
+
+      return (
+
+        <AdminComplaintDetails
+
+          complaint={
+            selectedComplaint
+          }
+
+          currentUser={
+            currentUser
+          }
+
+
+          onBack={() => {
+
+            setShowComplaintDetails(false);
+
+            setSelectedComplaint(null);
+
+          }}
+
+
+          onUpdate={() => {
+
+            setShowComplaintDetails(false);
+
+            setSelectedComplaint(null);
+
+          }}
+
+        />
+
+      );
+
+    }
+
+
+    // ---------------------------------------------------
+    // ADMIN DASHBOARD
+    // ---------------------------------------------------
+
+    return (
+
+      <AdminDashboard
+
+        onLogout={
+          handleLogout
+        }
+
+
+        onComplaintClick={(complaint) => {
+
+          console.log(
+            "ADMIN COMPLAINT SELECTED:",
+            complaint
+          );
+
+
+          setSelectedComplaint(
+            complaint
+          );
+
+
+          setShowComplaintDetails(
+            true
+          );
+
+        }}
+
+      />
+
+    );
+
+  }
+
 
   // =====================================================
   // LOGIN
   // =====================================================
 
   if (activePage === "login") {
-  return (
-    <Login
-      onBack={() =>
-        navigate(
-          prevPage === "login"
-            ? "feed"
-            : prevPage
-        )
-      }
 
-      onLoginSuccess={handleLoginSuccess}
+    return (
 
-      onSignup={() =>
-        navigate("signup")
-      }
-    />
-  );
-}
+      <Login
+
+        onBack={() =>
+          navigate(
+            prevPage === "login"
+              ? "feed"
+              : prevPage
+          )
+        }
+
+
+        onLoginSuccess={
+          handleLoginSuccess
+        }
+
+
+        onSignup={() =>
+          navigate("signup")
+        }
+
+      />
+
+    );
+
+  }
+
 
   // =====================================================
   // SIGNUP
@@ -297,23 +607,29 @@ function App() {
   if (activePage === "signup") {
 
     return (
+
       <Signup
 
         onBack={() =>
           navigate("login")
         }
 
+
         onLogin={() =>
           navigate("login")
         }
+
 
         onSignupSuccess={
           handleLoginSuccess
         }
 
       />
+
     );
+
   }
+
 
   // =====================================================
   // ISSUE DETAIL
@@ -325,33 +641,52 @@ function App() {
   ) {
 
     return (
+
       <IssueDetail
 
-        issue={selectedIssue}
+        issue={
+          selectedIssue
+        }
+
 
         currentUser={
           currentUser
         }
 
-        onBack={() =>
-          navigate(prevPage)
-        }
+
+        onBack={() => {
+
+          setSelectedIssue(null);
+
+          navigate(
+            prevPage === "detail"
+              ? "feed"
+              : prevPage
+          );
+
+        }}
+
 
         onUpvote={
           handleUpvote
         }
 
+
         onLoginPrompt={
           handleLoginPrompt
         }
+
 
         upvotedIds={
           upvotedIds
         }
 
       />
+
     );
+
   }
+
 
   // =====================================================
   // REPORT ISSUE
@@ -360,6 +695,7 @@ function App() {
   if (activePage === "report") {
 
     return (
+
       <div className="app-shell">
 
         <div className="page-content">
@@ -370,9 +706,11 @@ function App() {
               currentUser
             }
 
+
             onBack={() =>
               navigate("feed")
             }
+
 
             onSuccess={
               handleReportSuccess
@@ -382,15 +720,18 @@ function App() {
 
         </div>
 
+
         <BottomNav
 
           activePage={
             activePage
           }
 
+
           onNavigate={
             navigate
           }
+
 
           currentUser={
             currentUser
@@ -399,19 +740,26 @@ function App() {
         />
 
       </div>
+
     );
+
   }
+
 
   // =====================================================
   // MAIN APP
   // =====================================================
 
   return (
+
     <div className="app-shell">
 
       <div className="page-content">
 
-        {/* FEED */}
+
+        {/* =================================================
+            FEED
+        ================================================= */}
 
         {activePage === "feed" && (
 
@@ -421,7 +769,10 @@ function App() {
 
         )}
 
-        {/* EXPLORE */}
+
+        {/* =================================================
+            EXPLORE
+        ================================================= */}
 
         {activePage === "explore" && (
 
@@ -431,7 +782,10 @@ function App() {
 
         )}
 
-        {/* PROFILE */}
+
+        {/* =================================================
+            PROFILE
+        ================================================= */}
 
         {activePage === "profile" &&
           currentUser && (
@@ -448,7 +802,10 @@ function App() {
 
           )}
 
-        {/* ALERTS */}
+
+        {/* =================================================
+            ALERTS
+        ================================================= */}
 
         {activePage === "alerts" && (
 
@@ -460,13 +817,71 @@ function App() {
                 🔔
               </div>
 
+
               <h3>
                 Alerts
               </h3>
 
-              <p>
-                Notifications coming soon.
-              </p>
+
+              {notifications.length === 0 ? (
+
+                <p>
+                  No notifications yet.
+                </p>
+
+              ) : (
+
+                <div className="notifications-list">
+
+                  {notifications.map(
+                    (notification) => (
+
+                      <div
+
+                        className={`notification-card ${
+                          !notification.is_read
+                            ? "unread"
+                            : ""
+                        }`}
+
+                        key={
+                          notification.notification_id
+                        }
+
+                      >
+
+                        <div className="notification-icon">
+                          🔔
+                        </div>
+
+
+                        <div className="notification-content">
+
+                          <p>
+                            {notification.message}
+                          </p>
+
+
+                          <small>
+
+                            {notification.created_at
+                              ? new Date(
+                                  notification.created_at
+                                ).toLocaleString()
+                              : ""}
+
+                          </small>
+
+                        </div>
+
+                      </div>
+
+                    )
+                  )}
+
+                </div>
+
+              )}
 
             </div>
 
@@ -476,7 +891,10 @@ function App() {
 
       </div>
 
-      {/* BOTTOM NAVIGATION */}
+
+      {/* =================================================
+          BOTTOM NAVIGATION
+      ================================================= */}
 
       <BottomNav
 
@@ -484,9 +902,11 @@ function App() {
           activePage
         }
 
+
         onNavigate={
           navigate
         }
+
 
         currentUser={
           currentUser
@@ -495,7 +915,10 @@ function App() {
       />
 
     </div>
+
   );
-}
+
+} // 
+
 
 export default App;

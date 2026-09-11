@@ -1,5 +1,4 @@
 const express = require("express");
-const bcrypt = require("bcrypt");
 const pool = require("../db");
 
 const router = express.Router();
@@ -28,10 +27,11 @@ router.post("/register", async (req, res) => {
 
         const userRole = role.toUpperCase();
 
-        // Public registration is ONLY for Student / Faculty
+        // Public registration ONLY for Student / Faculty
         if (!["STUDENT", "FACULTY"].includes(userRole)) {
             return res.status(403).json({
-                message: "Administrator accounts cannot be created through public registration"
+                message:
+                    "Administrator accounts cannot be created through public registration"
             });
         }
 
@@ -65,8 +65,11 @@ router.post("/register", async (req, res) => {
             });
         }
 
-        // Hash password
-        const hashedPassword = await bcrypt.hash(password, 10);
+        // ==================================================
+        // PLAIN TEXT PASSWORD
+        // ==================================================
+
+        const userPassword = password;
 
         // Create Student / Faculty
         const result = await pool.query(
@@ -93,10 +96,12 @@ router.post("/register", async (req, res) => {
             [
                 name,
                 email,
-                hashedPassword,
+                userPassword,
                 userRole,
                 department_id,
-                userRole === "STUDENT" ? (parseInt(year) || null) : null,
+                userRole === "STUDENT"
+                    ? (parseInt(year) || null)
+                    : null,
                 null
             ]
         );
@@ -143,7 +148,8 @@ router.post("/login", async (req, res) => {
                 password,
                 role,
                 department_id,
-                year
+                year,
+                admin_type_id
              FROM users
              WHERE email = $1`,
             [email]
@@ -156,12 +162,18 @@ router.post("/login", async (req, res) => {
         }
 
         const user = result.rows[0];
+        console.log("LOGIN DEBUG:", {
+    emailFromDB: user.email,
+    passwordLength: user.password?.length,
+    passwordType: typeof user.password
+});
 
-        // Check password
-        const passwordMatch = await bcrypt.compare(
-            password,
-            user.password
-        );
+
+        // ==================================================
+        // PLAIN TEXT PASSWORD CHECK
+        // ==================================================
+
+        const passwordMatch = password === user.password;
 
         if (!passwordMatch) {
             return res.status(401).json({
@@ -169,7 +181,7 @@ router.post("/login", async (req, res) => {
             });
         }
 
-        // Never send password hash to frontend
+        // Never send password to frontend
         delete user.password;
 
         res.json({
@@ -189,13 +201,6 @@ router.post("/login", async (req, res) => {
 
 // ======================================================
 // CREATE ADMIN
-// ======================================================
-// NOTE:
-// This route will be called ONLY from the Admin Dashboard.
-//
-// For the next step, we will add proper authentication/
-// authorization middleware so that only an existing ADMIN
-// can access this endpoint.
 // ======================================================
 
 router.post("/create-admin", async (req, res) => {
@@ -227,8 +232,11 @@ router.post("/create-admin", async (req, res) => {
             });
         }
 
-        // Hash password
-        const hashedPassword = await bcrypt.hash(password, 10);
+        // ==================================================
+        // PLAIN TEXT PASSWORD
+        // ==================================================
+
+        const adminPassword = password;
 
         // Create admin
         const result = await pool.query(
@@ -253,7 +261,7 @@ router.post("/create-admin", async (req, res) => {
             [
                 name,
                 email,
-                hashedPassword,
+                adminPassword,
                 admin_type_id
             ]
         );
@@ -272,5 +280,9 @@ router.post("/create-admin", async (req, res) => {
     }
 });
 
+
+// ======================================================
+// EXPORT ROUTER
+// ======================================================
 
 module.exports = router;

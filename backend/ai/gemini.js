@@ -1,9 +1,477 @@
+
 // =============================================================
-//  backend/ai/gemini.js
-//  Central AI service — all Gemini calls go through here
+// backend/ai/gemini.js
+// Central AI service - all Gemini calls go through here
 // =============================================================
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+let genAI = null;
+let model = null;
+
+// =============================================================
+// GET GEMINI MODEL
+// =============================================================
+
+function getModel() {
+    if (!process.env.GEMINI_API_KEY) {
+        console.error("[Gemini] GEMINI_API_KEY is missing");
+        return null;
+    }
+
+    if (!model) {
+        genAI = new GoogleGenerativeAI(
+            process.env.GEMINI_API_KEY
+        );
+
+        model = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+        });
+    }
+
+    return model;
+}
+
+// =============================================================
+// COMMON GEMINI CALL
+// =============================================================
+
+async function ask(prompt) {
+    const m = getModel();
+
+    if (!m) {
+        return null;
+    }
+
+    try {
+        const result = await m.generateContent(prompt);
+
+        const text = result?.response?.text?.();
+
+        if (!text) {
+            console.error("[Gemini] Empty response");
+            return null;
+        }
+
+        return text.trim();
+
+    } catch (err) {
+        console.error("[Gemini] API error:", err.message);
+        return null;
+    }
+}
+
+// =============================================================
+// 1. SEMANTIC DUPLICATE DETECTION
+// =============================================================
+
+async function detectDuplicate(newIssue, existingIssues) {
+
+    if (
+        !Array.isArray(existingIssues) ||
+        existingIssues.length === 0
+    ) {
+        return {
+            isDuplicate: false,
+            matchedIssueId: null,
+            confidence: "LOW",
+        };
+    }
+
+    const existingList = existingIssues
+        .map((issue) => {
+            return `
+ID: ${issue.issue_id}
+Title: ${issue.title}
+Location: ${issue.location}
+Description: ${(issue.description || "").slice(0, 500)}
+`;
+        })
+        .join("\n-------------------------\n");
+
+    const prompt = `
+You are a STRICT duplicate complaint detector for a college campus.
+
+Your task is to compare ONE NEW COMPLAINT with EXISTING OPEN COMPLAINTS.
+
+A complaint is a DUPLICATE only if it describes the SAME real-world
+problem at the SAME or clearly equivalent physical location.
+
+========================
+NEW COMPLAINT
+========================
+
+Title:
+${newIssue.title}
+
+Location:
+${newIssue.location}
+
+Description:
+${newIssue.description}
+
+
+========================
+EXISTING OPEN COMPLAINTS
+========================
+
+${existingList}
+
+
+========================
+STRICT RULES
+========================
+
+RULE 1:
+Same problem + same location = DUPLICATE.
+
+RULE 2:
+Same problem + clearly equivalent location = DUPLICATE.
+
+RULE 3:
+Different location = NOT DUPLICATE.
+
+RULE 4:
+Different physical problem = NOT DUPLICATE.
+
+RULE 5:
+Ignore wording differences when the actual problem is clearly the same.
+
+RULE 6:
+Do NOT mark a complaint duplicate just because both contain common
+words such as:
+"problem", "issue", "broken", "not working", "campus", "room".
+
+RULE 7:
+The actual problem must be semantically the same.
+
+RULE 8:
+Location is VERY IMPORTANT.
+
+Different:
+- buildings
+- rooms
+- blocks
+- labs
+- areas
+- facilities
+
+usually means NOT DUPLICATE.
+
+RULE 9:
+If location is missing or unclear, prefer NOT DUPLICATE.
+
+RULE 10:
+If you are uncertain, return NOT DUPLICATE.
+
+RULE 11:
+You may ONLY select an issue ID that appears in the EXISTING OPEN
+COMPLAINTS list.
+
+RULE 12:
+Never invent an issue ID.
+
+RULE 13:
+Return only ONE best matching complaint.
+
+RULE 14:
+Same category does NOT automatically mean duplicate.
+
+========================
+EXAMPLES
+========================
+
+Example 1:
+
+NEW:
+Title: WiFi not working
+Location: Library
+Description: Internet has stopped working.
+
+EXISTING:
+Title: Internet connection down
+Location: Library
+Description: Students cannot access WiFi.
+
+ANSWER:
+DUPLICATE.
+
+
+Example 2:
+
+NEW:
+Title: Fan not working
+Location: Computer Lab
+Description: Ceiling fan is broken.
+
+EXISTING:
+Title: Fan not working
+Location: Library
+Description: Library fan is broken.
+
+ANSWER:
+NOT DUPLICATE.
+
+
+Example 3:
+
+NEW:
+Title: Water leakage
+Location: Block A
+Description: Water is leaking from the ceiling.
+
+EXISTING:
+Title: Water leaking from ceiling
+Location: Block A
+Description: Ceiling has a water leak.
+
+ANSWER:
+DUPLICATE.
+
+
+Example 4:
+
+NEW:
+Title: Broken chair
+Location: Block A
+Description: Chair is damaged.
+
+EXISTING:
+Title: Broken chair
+Location: Block B
+Description: Chair is damaged.
+
+ANSWER:
+NOT DUPLICATE.
+
+
+Example 5:
+
+NEW:
+Title: Fan not working
+Location: Library
+Description: Ceiling fan has stopped.
+
+EXISTING:
+Title: Water leakage
+Location: Library
+Description: Water is leaking from the ceiling.
+
+ANSWER:
+NOT DUPLICATE.
+
+
+Example 6:
+
+NEW:
+Title: Internet slow
+Location: Library
+Description: WiFi is very slow.
+
+EXISTING:
+Title: WiFi not working
+Location: Library
+Description: Students cannot connect to WiFi.
+
+ANSWER:
+DUPLICATE only if the existing complaint clearly represents the
+same ongoing internet service problem.
+
+
+========================
+OUTPUT
+========================
+
+Return ONLY valid JSON.
+
+If duplicate:
+
+{
+    "isDuplicate": true,
+    "matchedIssueId": EXISTING_ID,
+    "confidence": "HIGH"
+}
+
+If not duplicate:
+
+{
+    "isDuplicate": false,
+    "matchedIssueId": null,
+    "confidence": "LOW"
+}
+
+Confidence must be exactly one of:
+
+HIGH
+MEDIUM
+LOW
+
+Do not return explanations.
+Do not return markdown.
+Do not return multiple matches.
+`;
+
+    const raw = await ask(prompt);
+
+    if (!raw) {
+        console.error(
+            "[Gemini] Duplicate detection failed"
+        );
+
+        return {
+            isDuplicate: false,
+            matchedIssueId: null,
+            confidence: "LOW",
+            aiError: true,
+        };
+    }
+
+    try {
+
+        const cleaned = raw
+            .replace(/```json/gi, "")
+            .replace(/```/g, "")
+            .trim();
+
+        const parsed = JSON.parse(cleaned);
+
+        const confidence = String(
+            parsed.confidence || "LOW"
+        ).toUpperCase();
+
+        const matchedIssueId =
+            parsed.matchedIssueId !== null &&
+            parsed.matchedIssueId !== undefined
+                ? parsed.matchedIssueId
+                : null;
+
+        // -----------------------------------------------------
+        // SAFETY CHECK
+        // Make sure returned ID really exists.
+        // -----------------------------------------------------
+
+        const validMatch = existingIssues.find(
+            (issue) =>
+                String(issue.issue_id) ===
+                String(matchedIssueId)
+        );
+
+        // AI says duplicate but selected an invalid ID
+        if (
+            Boolean(parsed.isDuplicate) &&
+            !validMatch
+        ) {
+            console.warn(
+                "[Gemini] Invalid matched issue ID:",
+                matchedIssueId
+            );
+
+            return {
+                isDuplicate: false,
+                matchedIssueId: null,
+                confidence: "LOW",
+            };
+        }
+
+        return {
+            isDuplicate:
+                Boolean(parsed.isDuplicate) &&
+                Boolean(validMatch),
+
+            matchedIssueId:
+                parsed.isDuplicate && validMatch
+                    ? validMatch.issue_id
+                    : null,
+
+            confidence:
+                ["HIGH", "MEDIUM", "LOW"].includes(
+                    confidence
+                )
+                    ? confidence
+                    : "LOW",
+        };
+
+    } catch (err) {
+
+        console.error(
+            "[Gemini] Invalid duplicate JSON:",
+            raw
+        );
+
+        return {
+            isDuplicate: false,
+            matchedIssueId: null,
+            confidence: "LOW",
+            aiError: true,
+        };
+    }
+}
+
+// =============================================================
+// 2. AUTO PRIORITY
+// =============================================================
+
+async function scorePriority(
+    title,
+    description,
+    category
+) {
+
+    const prompt = `
+You are a college campus complaint priority classifier.
+
+Title:
+${title}
+
+Category:
+${category || "General"}
+
+Description:
+${description}
+
+Choose exactly ONE priority.
+
+CRITICAL = immediate safety hazard, serious health risk,
+or complete service outage affecting many people.
+
+HIGH = significant disruption to normal campus activities.
+
+MEDIUM = normal inconvenience.
+
+LOW = minor or cosmetic issue.
+
+Return ONLY one word:
+
+CRITICAL
+HIGH
+MEDIUM
+LOW
+`;
+
+    const result = await ask(prompt);
+
+    if (!result) {
+        return "MEDIUM";
+    }
+
+    const cleaned = result
+        .toUpperCase()
+        .replace(/[^A-Z]/g, "");
+
+    if (
+        ["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(
+            cleaned
+        )
+    ) {
+        return cleaned;
+    }
+
+    return "MEDIUM";
+}
+
+// =============================================================
+// 3. AUTO CATEGORY
+// =============================================================
 
 const CAMPUS_CATEGORIES = [
     "Electricity",
@@ -12,291 +480,139 @@ const CAMPUS_CATEGORIES = [
     "Infrastructure",
     "Wi-Fi / Internet",
     "Security",
-    "Other"
+    "Other",
 ];
 
-// Models to try in order of preference.
-// gemini-flash-latest has standard free-tier quotas.
-const CANDIDATE_MODELS = [
-    "gemini-flash-latest",
-    "gemini-3.5-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-3.7-flash"
-];
+async function detectCategory(
+    title,
+    description
+) {
 
-let genAI = null;
-let activeModelName = null;
+    const prompt = `
+Classify this college campus complaint.
 
-function isEnabled() {
-    return Boolean(process.env.GEMINI_API_KEY);
-}
+Title:
+${title}
 
-function getClient() {
-    if (!process.env.GEMINI_API_KEY) {
-        return null;
-    }
-    if (!genAI) {
-        genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    }
-    return genAI;
-}
+Description:
+${description}
 
-// -------------------------------------------------------------
-//  Heuristic Fallbacks (Ensures features never fail if offline / quota)
-// -------------------------------------------------------------
-function heuristicCategory(title = "", description = "") {
-    const text = `${title} ${description}`.toLowerCase();
-    if (/wi-?fi|internet|network|router|ethernet|connection|online|lan|speed|signal/i.test(text)) {
-        return { categoryName: "Wi-Fi / Internet", confidence: "MEDIUM" };
-    }
-    if (/water|leak|tap|pipe|flush|plumb|drain|sink|washbasin|tank|overflow/i.test(text)) {
-        return { categoryName: "Water", confidence: "MEDIUM" };
-    }
-    if (/electric|light|fan|power|bulb|switch|plug|socket|wire|short circuit|blackout|mcb/i.test(text)) {
-        return { categoryName: "Electricity", confidence: "MEDIUM" };
-    }
-    if (/clean|dustbin|garbage|trash|dirty|smell|stench|washroom|toilet|mess|dust/i.test(text)) {
-        return { categoryName: "Cleanliness", confidence: "MEDIUM" };
-    }
-    if (/door|window|chair|bench|desk|wall|ceiling|lift|elevator|broken|furniture|board|stairs|floor/i.test(text)) {
-        return { categoryName: "Infrastructure", confidence: "MEDIUM" };
-    }
-    if (/guard|theft|stolen|robbery|cctv|security|threat|fight|harass|gate|trespass/i.test(text)) {
-        return { categoryName: "Security", confidence: "MEDIUM" };
-    }
-    return { categoryName: "Other", confidence: "LOW" };
-}
+Available categories:
 
-function heuristicPriority(title = "", description = "") {
-    const text = `${title} ${description}`.toLowerCase();
-    if (/fire|smoke|hazard|spark|shock|blood|emergency|danger|severe|critical|collapse/i.test(text)) {
-        return "CRITICAL";
-    }
-    if (/entire|whole|all|urgent|blackout|no internet|exam|completely down|flood|burst/i.test(text)) {
-        return "HIGH";
-    }
-    if (/broken|not working|leak|faulty|damaged|slow|cracked/i.test(text)) {
-        return "MEDIUM";
-    }
-    return "LOW";
-}
-
-// -------------------------------------------------------------
-//  Core Gemini invocation with model fallback
-// -------------------------------------------------------------
-async function ask(prompt) {
-    const client = getClient();
-    if (!client) return null;
-
-    // Start with last successful model or first candidate
-    const modelsToTry = activeModelName
-        ? [activeModelName, ...CANDIDATE_MODELS.filter(m => m !== activeModelName)]
-        : CANDIDATE_MODELS;
-
-    for (const modelName of modelsToTry) {
-        try {
-            const m = client.getGenerativeModel({ model: modelName });
-            const result = await m.generateContent(prompt);
-            activeModelName = modelName; // remember working model
-            return result.response.text().trim();
-        } catch (err) {
-            console.warn(`[Gemini] Model ${modelName} failed (${err.message}). Trying fallback...`);
-        }
-    }
-
-    console.error("[Gemini] All candidate models failed or quota exceeded.");
-    return null;
-}
-
-// =============================================================
-//  UNIFIED REAL-TIME ANALYSIS (1 single API call for all 3 tasks)
-// =============================================================
-async function analyzeIssue(title, description, location = "", existingIssues = []) {
-    const fallbackCat = heuristicCategory(title, description);
-    const fallbackPri = heuristicPriority(title, description);
-
-    // Heuristic duplicate check
-    let fallbackDup = { isDuplicate: false, matchedIssueId: null, confidence: "LOW" };
-    const locLower = (location || "").trim().toLowerCase();
-    const titleLower = (title || "").trim().toLowerCase();
-    if (existingIssues.length) {
-        const found = existingIssues.find(i => {
-            const matchLoc = locLower && (i.location || "").toLowerCase().includes(locLower);
-            const matchTitle = (i.title || "").toLowerCase().includes(titleLower) || titleLower.includes((i.title || "").toLowerCase());
-            return matchLoc && matchTitle;
-        });
-        if (found) {
-            fallbackDup = { isDuplicate: true, matchedIssueId: found.issue_id, confidence: "MEDIUM" };
-        }
-    }
-
-    if (!isEnabled()) {
-        return {
-            suggested_priority: fallbackPri,
-            suggested_category: fallbackCat,
-            duplicate_check: fallbackDup,
-        };
-    }
-
-    const issuesSample = existingIssues.slice(0, 20)
-        .map(i => `ID:${i.issue_id} | "${i.title}" | Loc: ${i.location} | Desc: ${(i.description || "").slice(0, 60)}`)
-        .join("\n");
-
-    const prompt = `You are a campus issue assistant. Analyze this complaint and return ONLY a single JSON object.
-
-NEW COMPLAINT:
-Title: ${title}
-Location: ${location || "Campus"}
-Description: ${description}
-
-CATEGORIES:
 ${CAMPUS_CATEGORIES.join(", ")}
 
-${issuesSample ? `EXISTING OPEN ISSUES:\n${issuesSample}\n` : ""}
-Task:
-1. "categoryName": Choose best category from list.
-2. "categoryConfidence": "HIGH", "MEDIUM", or "LOW".
-3. "priority": "CRITICAL" (safety/campus outage), "HIGH" (major disruption), "MEDIUM" (manageable), or "LOW" (minor).
-4. "isDuplicate": true if same problem at same location as an existing issue, false otherwise.
-5. "matchedIssueId": ID of matched issue or null.
-6. "duplicateConfidence": "HIGH", "MEDIUM", or "LOW".
+Return ONLY JSON:
 
-Output JSON format ONLY (no markdown fences, no extra text):
-{"categoryName": "...", "categoryConfidence": "HIGH", "priority": "...", "isDuplicate": false, "matchedIssueId": null, "duplicateConfidence": "LOW"}`;
+{
+    "categoryName": "exact category name",
+    "confidence": "HIGH"
+}
+`;
 
     const raw = await ask(prompt);
+
     if (!raw) {
         return {
-            suggested_priority: fallbackPri,
-            suggested_category: fallbackCat,
-            duplicate_check: fallbackDup,
+            categoryName: null,
+            confidence: "LOW",
         };
     }
 
     try {
-        const cleaned = raw.replace(/```json|```/g, "").trim();
+
+        const cleaned = raw
+            .replace(/```json/gi, "")
+            .replace(/```/g, "")
+            .trim();
+
         const parsed = JSON.parse(cleaned);
 
-        const matchedCat = CAMPUS_CATEGORIES.find(
-            c => c.toLowerCase() === (parsed.categoryName || "").toLowerCase()
+        const categoryName = String(
+            parsed.categoryName || ""
+        ).trim();
+
+        const matchedCategory =
+            CAMPUS_CATEGORIES.find(
+                (category) =>
+                    category.toLowerCase() ===
+                    categoryName.toLowerCase()
+            );
+
+        return {
+            categoryName:
+                matchedCategory || null,
+
+            confidence:
+                ["HIGH", "MEDIUM", "LOW"].includes(
+                    String(
+                        parsed.confidence
+                    ).toUpperCase()
+                )
+                    ? String(
+                        parsed.confidence
+                    ).toUpperCase()
+                    : "LOW",
+        };
+
+    } catch (err) {
+
+        console.error(
+            "[Gemini] Category JSON error:",
+            err.message
         );
 
-        const validPriorities = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-        const priUpper = (parsed.priority || "").toUpperCase().trim();
-
         return {
-            suggested_priority: validPriorities.includes(priUpper) ? priUpper : fallbackPri,
-            suggested_category: {
-                categoryName: matchedCat || fallbackCat.categoryName,
-                confidence: parsed.categoryConfidence || "HIGH",
-            },
-            duplicate_check: {
-                isDuplicate: Boolean(parsed.isDuplicate),
-                matchedIssueId: parsed.matchedIssueId || fallbackDup.matchedIssueId,
-                confidence: parsed.duplicateConfidence || fallbackDup.confidence,
-            },
-        };
-    } catch (parseErr) {
-        console.warn("[Gemini] Parse error on response:", raw);
-        return {
-            suggested_priority: fallbackPri,
-            suggested_category: fallbackCat,
-            duplicate_check: fallbackDup,
+            categoryName: null,
+            confidence: "LOW",
         };
     }
 }
 
 // =============================================================
-//  1. SEMANTIC DUPLICATE DETECTION (Backward Compatibility)
+// 4. ISSUE SUMMARY
 // =============================================================
-async function detectDuplicate(newIssue, existingIssues) {
-    if (!existingIssues.length) return { isDuplicate: false, matchedIssueId: null };
-    const existingList = existingIssues
-        .map((i) => `ID:${i.issue_id} | "${i.title}" | ${i.location} | ${(i.description || "").slice(0, 80)}`)
-        .join("\n");
-    const prompt = `You are a campus issue deduplication system. Determine if a NEW issue is a duplicate of any EXISTING open issue.
 
-NEW ISSUE:
-Title: ${newIssue.title}
-Location: ${newIssue.location}
-Description: ${newIssue.description}
-
-EXISTING OPEN ISSUES:
-${existingList}
-
-Respond ONLY in this exact JSON format (no markdown):
-{"isDuplicate": true/false, "matchedIssueId": <ID or null>, "confidence": "HIGH"/"MEDIUM"/"LOW"}`;
-
-    const raw = await ask(prompt);
-    if (!raw) return { isDuplicate: false, matchedIssueId: null };
-    try {
-        const cleaned = raw.replace(/```json|```/g, "").trim();
-        const parsed = JSON.parse(cleaned);
-        return { isDuplicate: Boolean(parsed.isDuplicate), matchedIssueId: parsed.matchedIssueId || null, confidence: parsed.confidence || "LOW" };
-    } catch { return { isDuplicate: false, matchedIssueId: null }; }
-}
-
-// =============================================================
-//  2. AUTO-PRIORITY SCORING (Backward Compatibility)
-// =============================================================
-async function scorePriority(title, description, category) {
-    const prompt = `You are a campus facilities priority system. Assign a priority to this campus complaint.
-
-Title: ${title}
-Category: ${category || "General"}
-Description: ${description}
-
-Priority scale:
-- CRITICAL: Immediate safety hazard, health risk, or complete service outage affecting many people
-- HIGH: Significant disruption to daily activities
-- MEDIUM: Inconvenience but manageable
-- LOW: Minor cosmetic or non-urgent issues
-
-Respond with ONLY one word: CRITICAL, HIGH, MEDIUM, or LOW`;
-    const result = await ask(prompt);
-    if (!result) return heuristicPriority(title, description);
-    const cleaned = result.toUpperCase().replace(/[^A-Z]/g, "");
-    return ["CRITICAL", "HIGH", "MEDIUM", "LOW"].includes(cleaned) ? cleaned : heuristicPriority(title, description);
-}
-
-// =============================================================
-//  3. AUTO-CATEGORY DETECTION (Backward Compatibility)
-// =============================================================
-async function detectCategory(title, description) {
-    const prompt = `You are a campus issue classification system. Classify this issue into the most appropriate category.
-
-Title: ${title}
-Description: ${description}
-
-Available categories: ${CAMPUS_CATEGORIES.join(", ")}
-
-Respond ONLY in this exact JSON format (no markdown):
-{"categoryName": "<exact category name from the list>", "confidence": "HIGH"/"MEDIUM"/"LOW"}`;
-    const raw = await ask(prompt);
-    if (!raw) return heuristicCategory(title, description);
-    try {
-        const cleaned = raw.replace(/```json|```/g, "").trim();
-        const parsed = JSON.parse(cleaned);
-        const match = CAMPUS_CATEGORIES.find((c) => c.toLowerCase() === (parsed.categoryName || "").toLowerCase());
-        return { categoryName: match || heuristicCategory(title, description).categoryName, confidence: parsed.confidence || "HIGH" };
-    } catch { return heuristicCategory(title, description); }
-}
-
-// =============================================================
-//  4. AI ISSUE SUMMARY
-// =============================================================
 async function summariseIssues(issues) {
-    if (!issues.length) return null;
-    const reports = issues.map((i, idx) => `Report ${idx + 1}: ${i.title} - ${(i.description || "").slice(0, 120)}`).join("\n");
-    const prompt = `Summarise these campus issue reports into ONE clear concise sentence (max 30 words) describing the core problem:\n${reports}\n\nRespond with ONLY the summary sentence.`;
+
+    if (
+        !Array.isArray(issues) ||
+        issues.length === 0
+    ) {
+        return null;
+    }
+
+    const reports = issues
+        .map(
+            (issue, index) =>
+                `Report ${index + 1}: ${issue.title} - ${
+                    issue.description || ""
+                }`
+        )
+        .join("\n");
+
+    const prompt = `
+Summarise these college campus complaints into ONE
+clear sentence of maximum 30 words.
+
+${reports}
+
+Return ONLY the summary sentence.
+`;
+
     return await ask(prompt);
 }
 
+// =============================================================
+// EXPORTS
+// =============================================================
+
 module.exports = {
-    analyzeIssue,
     detectDuplicate,
     scorePriority,
     detectCategory,
     summariseIssues,
-    isEnabled: () => Boolean(process.env.GEMINI_API_KEY)
+
+    isEnabled: () =>
+        Boolean(process.env.GEMINI_API_KEY),
 };
+

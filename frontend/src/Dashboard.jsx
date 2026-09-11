@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import "./App.css";
 
 function Dashboard({
@@ -17,6 +18,29 @@ function Dashboard({
     user?.full_name ||
     user?.username ||
     displayRole;
+    const [notifications, setNotifications] = useState([]);
+
+useEffect(() => {
+  if (!user?.user_id) return;
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/issues/notifications/${user.user_id}`
+      );
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setNotifications(data);
+      }
+    } catch (error) {
+      console.error("Notification fetch error:", error);
+    }
+  };
+
+  fetchNotifications();
+}, [user?.user_id]);
 
   return (
     <div className="dashboard-page">
@@ -30,21 +54,41 @@ function Dashboard({
         <div className="logo">
           🏫 Campus Civic
         </div>
-
         <div className="dashboard-nav-right">
 
-          <div className="student-name">
-            👤 {displayName}
-          </div>
+  <div className="notification-wrapper">
+    <button
+      className="notification-btn"
+      onClick={() => alert(
+        notifications.length > 0
+          ? notifications.map(n => n.message).join("\n")
+          : "No new notifications"
+      )}
+    >
+      🔔
 
-          <button
-            className="logout-btn"
-            onClick={onLogout}
-          >
-            Logout
-          </button>
+      {notifications.filter(n => !n.is_read).length > 0 && (
+        <span className="notification-badge">
+          {notifications.filter(n => !n.is_read).length}
+        </span>
+      )}
+    </button>
+  </div>
 
-        </div>
+  <div className="student-name">
+    👤 {displayName}
+  </div>
+
+  <button
+    className="logout-btn"
+    onClick={onLogout}
+  >
+    Logout
+  </button>
+
+</div>
+
+
 
       </nav>
 
