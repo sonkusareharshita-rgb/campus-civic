@@ -33,16 +33,12 @@ function App() {
 
   const [notifications, setNotifications] = useState([]);
 
-
   useEffect(() => {
 
     if (!currentUser?.user_id) {
-
       setNotifications([]);
-
       return;
     }
-
 
     const fetchNotifications = async () => {
 
@@ -52,9 +48,7 @@ function App() {
           `http://localhost:5000/api/issues/notifications/${currentUser.user_id}`
         );
 
-
         const data = await response.json();
-
 
         if (response.ok) {
 
@@ -83,7 +77,6 @@ function App() {
       }
 
     };
-
 
     fetchNotifications();
 
@@ -135,7 +128,6 @@ function App() {
   function navigate(page) {
 
     setPrevPage(activePage);
-
     setActivePage(page);
 
   }
@@ -151,7 +143,6 @@ function App() {
       "LOGGED IN USER:",
       user
     );
-
 
     setCurrentUser(user);
 
@@ -583,11 +574,9 @@ function App() {
           )
         }
 
-
         onLoginSuccess={
           handleLoginSuccess
         }
-
 
         onSignup={() =>
           navigate("signup")
@@ -614,11 +603,9 @@ function App() {
           navigate("login")
         }
 
-
         onLogin={() =>
           navigate("login")
         }
-
 
         onSignupSuccess={
           handleLoginSuccess
@@ -647,7 +634,6 @@ function App() {
         issue={
           selectedIssue
         }
-
 
         currentUser={
           currentUser
@@ -706,11 +692,9 @@ function App() {
               currentUser
             }
 
-
             onBack={() =>
               navigate("feed")
             }
-
 
             onSuccess={
               handleReportSuccess
@@ -727,11 +711,9 @@ function App() {
             activePage
           }
 
-
           onNavigate={
             navigate
           }
-
 
           currentUser={
             currentUser
@@ -848,6 +830,68 @@ function App() {
                           notification.notification_id
                         }
 
+
+                        // =================================================
+                        // FIXED NOTIFICATION CLICK
+                        // =================================================
+
+                        onClick={async () => {
+
+                          try {
+
+                            const response =
+                              await fetch(
+                                `http://localhost:5000/api/issues/${notification.issue_id}`
+                              );
+
+
+                            const data =
+                              await response.json();
+
+
+                            if (response.ok) {
+
+                              // IMPORTANT:
+                              // Backend returns:
+                              // { message, issue: {...} }
+
+                              // So we must store data.issue
+                              // instead of complete response.
+
+                              setSelectedIssue(
+                                data.issue
+                              );
+
+
+                              navigate(
+                                "detail"
+                              );
+
+                            } else {
+
+                              console.error(
+                                "Issue fetch error:",
+                                data.message
+                              );
+
+                            }
+
+                          } catch (error) {
+
+                            console.error(
+                              "Notification issue error:",
+                              error
+                            );
+
+                          }
+
+                        }}
+
+
+                        style={{
+                          cursor: "pointer"
+                        }}
+
                       >
 
                         <div className="notification-icon">
@@ -857,9 +901,13 @@ function App() {
 
                         <div className="notification-content">
 
-                          <p>
-                            {notification.message}
-                          </p>
+                          <div className="notification-title">
+  {notification.issue_title || "Campus Complaint"}
+</div>
+
+<p>
+  {notification.message}
+</p>
 
 
                           <small>
@@ -902,11 +950,9 @@ function App() {
           activePage
         }
 
-
         onNavigate={
           navigate
         }
-
 
         currentUser={
           currentUser
@@ -918,7 +964,7 @@ function App() {
 
   );
 
-} // 
+}
 
 
 export default App;

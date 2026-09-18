@@ -1,5 +1,6 @@
+
 import { useState } from "react";
-import "./App.css";
+import "./ApproverDashboard.css";
 
 const API_BASE_URL = "http://localhost:5000";
 
@@ -27,6 +28,37 @@ function ApproverComplaintDetails({
   };
 
   // ==========================================
+  // DISPLAY STATUS
+  // ==========================================
+
+  const getDisplayStatus = (status) => {
+    switch (status) {
+      case "SUBMITTED":
+      case "PENDING":
+        return "PENDING VERIFICATION";
+
+      case "APPROVED":
+      case "VERIFIED":
+        return "VERIFIED";
+
+      case "REJECTED":
+        return "REJECTED";
+
+      case "ASSIGNED":
+        return "FORWARDED TO ADMIN";
+
+      case "IN_PROGRESS":
+        return "IN PROGRESS";
+
+      case "RESOLVED":
+        return "RESOLVED";
+
+      default:
+        return status || "PENDING VERIFICATION";
+    }
+  };
+
+  // ==========================================
   // APPROVE COMPLAINT
   // ==========================================
 
@@ -40,6 +72,11 @@ function ApproverComplaintDetails({
 
     if (!currentUser?.user_id) {
       alert("Approver information not found.");
+      return;
+    }
+
+    if (!complaint?.issue_id) {
+      alert("Complaint information not found.");
       return;
     }
 
@@ -57,7 +94,7 @@ function ApproverComplaintDetails({
 
           body: JSON.stringify({
             approver_id: currentUser.user_id,
-            verification_note: verificationNote,
+            verification_note: verificationNote.trim(),
           }),
         }
       );
@@ -67,7 +104,7 @@ function ApproverComplaintDetails({
       if (!response.ok) {
         alert(
           data.message ||
-            "Unable to approve complaint"
+            "Unable to approve complaint."
         );
         return;
       }
@@ -77,7 +114,7 @@ function ApproverComplaintDetails({
       );
 
       if (onUpdate) {
-        onUpdate();
+        await onUpdate();
       }
 
       onBack();
@@ -94,7 +131,6 @@ function ApproverComplaintDetails({
     }
   };
 
-
   // ==========================================
   // REJECT COMPLAINT
   // ==========================================
@@ -109,6 +145,11 @@ function ApproverComplaintDetails({
 
     if (!currentUser?.user_id) {
       alert("Approver information not found.");
+      return;
+    }
+
+    if (!complaint?.issue_id) {
+      alert("Complaint information not found.");
       return;
     }
 
@@ -134,7 +175,7 @@ function ApproverComplaintDetails({
 
           body: JSON.stringify({
             approver_id: currentUser.user_id,
-            rejection_reason: verificationNote,
+            rejection_reason: verificationNote.trim(),
           }),
         }
       );
@@ -144,7 +185,7 @@ function ApproverComplaintDetails({
       if (!response.ok) {
         alert(
           data.message ||
-            "Unable to reject complaint"
+            "Unable to reject complaint."
         );
         return;
       }
@@ -154,7 +195,7 @@ function ApproverComplaintDetails({
       );
 
       if (onUpdate) {
-        onUpdate();
+        await onUpdate();
       }
 
       onBack();
@@ -173,7 +214,6 @@ function ApproverComplaintDetails({
       setActionLoading(false);
     }
   };
-
 
   // ==========================================
   // UI
@@ -216,6 +256,7 @@ function ApproverComplaintDetails({
         <button
           className="approver-back-btn"
           onClick={onBack}
+          disabled={actionLoading}
         >
           ← Back to Verification Queue
         </button>
@@ -232,7 +273,8 @@ function ApproverComplaintDetails({
             </span>
 
             <h1>
-              {complaint?.title}
+              {complaint?.title ||
+                "Untitled Complaint"}
             </h1>
 
             <p>
@@ -249,7 +291,9 @@ function ApproverComplaintDetails({
             </span>
 
             <strong>
-              {complaint?.status || "SUBMITTED"}
+              {getDisplayStatus(
+                complaint?.status
+              )}
             </strong>
 
           </div>
@@ -344,7 +388,8 @@ function ApproverComplaintDetails({
                   </span>
 
                   <strong>
-                    📍 {complaint?.location ||
+                    📍{" "}
+                    {complaint?.location ||
                       "Campus"}
                   </strong>
 
@@ -383,7 +428,8 @@ function ApproverComplaintDetails({
 
               <div className="verification-description">
 
-                {complaint?.description}
+                {complaint?.description ||
+                  "No description provided."}
 
               </div>
 
@@ -436,9 +482,7 @@ function ApproverComplaintDetails({
             </section>
 
 
-            {/* ======================================
-                COMPLAINT IMAGE
-            ====================================== */}
+            {/* COMPLAINT IMAGE */}
 
             {complaint?.image_url && (
 
@@ -489,9 +533,7 @@ function ApproverComplaintDetails({
             )}
 
 
-            {/* ======================================
-                COMPLAINT VIDEO
-            ====================================== */}
+            {/* COMPLAINT VIDEO */}
 
             {complaint?.video_url && (
 
@@ -574,21 +616,15 @@ function ApproverComplaintDetails({
 
 
               <textarea
-
                 value={verificationNote}
-
                 onChange={(e) =>
                   setVerificationNote(
                     e.target.value
                   )
                 }
-
                 placeholder="Write your verification comments or rejection reason..."
-
                 rows="7"
-
                 disabled={actionLoading}
-
               />
 
 
@@ -608,13 +644,9 @@ function ApproverComplaintDetails({
               {/* APPROVE */}
 
               <button
-
                 className="approve-send-btn"
-
                 onClick={handleApprove}
-
                 disabled={actionLoading}
-
               >
 
                 <span>
@@ -642,13 +674,9 @@ function ApproverComplaintDetails({
               {/* REJECT */}
 
               <button
-
                 className="reject-complaint-btn"
-
                 onClick={handleReject}
-
                 disabled={actionLoading}
-
               >
 
                 <span>

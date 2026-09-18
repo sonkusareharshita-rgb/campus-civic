@@ -1,63 +1,237 @@
-import { useEffect, useState } from 'react'
-import './App.css'
+import { useEffect, useRef, useState } from "react";
+import "./ApproverDashboard.css";
 
 function ApproverDashboard({
   user,
   onLogout,
-  onComplaintClick
+  onComplaintClick,
 }) {
-  const [complaints, setComplaints] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [complaints, setComplaints] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Controls which complaint list is displayed
+  const [activeFilter, setActiveFilter] = useState("PENDING");
+
+  // Complaint queue reference for automatic scroll
+  const complaintQueueRef = useRef(null);
+
+  // Supporter modal
+  const [selectedSupporters, setSelectedSupporters] = useState([]);
+  const [showSupporters, setShowSupporters] = useState(false);
 
   useEffect(() => {
-    fetchComplaints()
-  }, [])
+    fetchComplaints();
+  }, []);
+
+  // =====================================================
+  // FETCH ALL COMPLAINTS
+  // =====================================================
 
   const fetchComplaints = async () => {
     try {
-      const response = await fetch(
-        'http://localhost:5000/api/issues/all'
-      )
+      setLoading(true);
 
-      const data = await response.json()
+      const response = await fetch(
+        "http://localhost:5000/api/issues/all"
+      );
+
+      const data = await response.json();
 
       if (response.ok) {
-        setComplaints(data.issues || data)
+        setComplaints(data.issues || data);
       } else {
-        console.error(data.message)
+        console.error(data.message);
       }
-
     } catch (error) {
-      console.error(
-        'Error loading complaints:',
-        error
-      )
+      console.error("Error loading complaints:", error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
+
+  // =====================================================
+  // STATUS FILTERS
+  // =====================================================
 
   const pendingComplaints = complaints.filter(
     (complaint) =>
-      complaint.status === 'SUBMITTED' ||
-      complaint.status === 'PENDING'
-  )
+      complaint.status === "SUBMITTED" ||
+      complaint.status === "PENDING"
+  );
 
   const approvedComplaints = complaints.filter(
     (complaint) =>
-      complaint.status === 'APPROVED' ||
-      complaint.status === 'VERIFIED'
-  )
+      complaint.status === "APPROVED" ||
+      complaint.status === "VERIFIED"
+  );
 
   const rejectedComplaints = complaints.filter(
     (complaint) =>
-      complaint.status === 'REJECTED'
-  )
+      complaint.status === "REJECTED"
+  );
+
+  // =====================================================
+  // TOTAL VALID COMPLAINTS
+  // =====================================================
+
+  const totalComplaints =
+    pendingComplaints.length +
+    approvedComplaints.length +
+    rejectedComplaints.length;
+
+  // =====================================================
+  // DISPLAYED COMPLAINTS
+  // =====================================================
+
+  const displayedComplaints =
+    activeFilter === "PENDING"
+      ? pendingComplaints
+      : activeFilter === "APPROVED"
+      ? approvedComplaints
+      : activeFilter === "REJECTED"
+      ? rejectedComplaints
+      : [
+          ...pendingComplaints,
+          ...approvedComplaints,
+          ...rejectedComplaints,
+        ];
+
+  // =====================================================
+  // FILTER TITLE
+  // =====================================================
+
+  const getQueueTitle = () => {
+    switch (activeFilter) {
+      case "APPROVED":
+        return "Approved Complaints";
+
+      case "REJECTED":
+        return "Rejected Complaints";
+
+      case "ALL":
+        return "All Complaints";
+
+      default:
+        return "Pending Verification";
+    }
+  };
+
+  const getQueueDescription = () => {
+    switch (activeFilter) {
+      case "APPROVED":
+        return "Complaints that have been verified and approved.";
+
+      case "REJECTED":
+        return "Complaints that were rejected during verification.";
+
+      case "ALL":
+        return "All complaints currently recorded in the verification workflow.";
+
+      default:
+        return "Review these complaints before they are forwarded to the administration.";
+    }
+  };
+
+  // =====================================================
+  // PRIORITY
+  // =====================================================
+
+  const getPriorityClass = (priority) => {
+    return (priority || "MEDIUM").toLowerCase();
+  };
+
+  // =====================================================
+  // CATEGORY SHORT NAME
+  // =====================================================
+
+  const getCategory = (complaint) => {
+    return complaint.category_name || "Other";
+  };
+
+  // =====================================================
+  // FORMAT DATE
+  // =====================================================
+
+  const formatDate = (date) => {
+    if (!date) return "Recently submitted";
+
+    try {
+      return new Date(date).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return "Recently submitted";
+    }
+  };
+
+  // =====================================================
+  // CARD FILTER HANDLER
+  // =====================================================
+
+  const handleFilterChange = (filter) => {
+    setActiveFilter(filter);
+
+    // Automatically scroll to complaint queue
+    setTimeout(() => {
+      complaintQueueRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
+  };
+
+  // =====================================================
+  // SUPPORT COUNT
+  // =====================================================
+
+  const getSupportCount = (complaint) => {
+    return Number(complaint.report_count || 0);
+  };
+
+  // =====================================================
+  // SUPPORTERS
+  // =====================================================
+
+  const getSupporters = (complaint) => {
+    if (!Array.isArray(complaint.supporters)) {
+      return [];
+    }
+
+    return complaint.supporters;
+  };
+
+  // =====================================================
+  // OPEN PEOPLE MODAL
+  // =====================================================
+
+  const openSupportersModal = (complaint) => {
+    const supporters = getSupporters(complaint);
+
+    setSelectedSupporters(supporters);
+    setShowSupporters(true);
+  };
+
+  // =====================================================
+  // CLOSE PEOPLE MODAL
+  // =====================================================
+
+  const closeSupportersModal = () => {
+    setShowSupporters(false);
+    setSelectedSupporters([]);
+  };
+
+  // =====================================================
+  // RENDER
+  // =====================================================
 
   return (
     <div className="approver-page">
 
-      {/* NAVBAR */}
+      {/* =================================================
+          NAVBAR
+      ================================================= */}
 
       <nav className="approver-navbar">
 
@@ -67,12 +241,16 @@ function ApproverDashboard({
             ✓
           </div>
 
-          <div>
-            <strong>Campus Civic</strong>
+          <div className="approver-brand-text">
+
+            <strong>
+              Campus Civic
+            </strong>
 
             <span>
               Complaint Verification Portal
             </span>
+
           </div>
 
         </div>
@@ -81,13 +259,13 @@ function ApproverDashboard({
         <div className="approver-profile">
 
           <div className="approver-avatar">
-            {user?.name?.charAt(0) || 'A'}
+            {user?.name?.charAt(0)?.toUpperCase() || "A"}
           </div>
 
           <div className="approver-user-info">
 
             <strong>
-              {user?.name || 'Approver'}
+              {user?.name || "Approver"}
             </strong>
 
             <span>
@@ -95,7 +273,6 @@ function ApproverDashboard({
             </span>
 
           </div>
-
 
           <button
             className="approver-logout"
@@ -109,234 +286,271 @@ function ApproverDashboard({
       </nav>
 
 
-      {/* MAIN */}
+      {/* =================================================
+          MAIN CONTENT
+      ================================================= */}
 
       <main className="approver-content">
 
-
-        {/* HEADER */}
+        {/* =================================================
+            PAGE HEADER
+        ================================================= */}
 
         <section className="approver-header">
 
-          <div>
+          <div className="approver-header-left">
 
-            <p className="approver-label">
+            <div className="approver-eyebrow">
               VERIFICATION CENTER
-            </p>
+            </div>
 
             <h1>
               Complaint Verification
             </h1>
 
             <p>
-              Review submitted complaints before
-              forwarding them to the administration.
+              Review submitted complaints, verify their
+              authenticity, and forward approved complaints
+              to the administration.
             </p>
 
           </div>
 
 
-          <div className="approver-header-icon">
-            🔍
-          </div>
+          <div className="approver-header-right">
 
-        </section>
+            <div className="verification-status">
 
+              <span className="status-dot"></span>
 
-        {/* STATS */}
-
-        <section className="approver-stats">
-
-
-          <div className="approver-stat-card pending-card">
-
-            <div className="approver-stat-icon">
-              ⏳
-            </div>
-
-            <div>
-
-              <span>
-                Pending Review
-              </span>
-
-              <strong>
-                {pendingComplaints.length}
-              </strong>
+              Verification Active
 
             </div>
-
-          </div>
-
-
-          <div className="approver-stat-card approved-card">
-
-            <div className="approver-stat-icon">
-              ✓
-            </div>
-
-            <div>
-
-              <span>
-                Approved
-              </span>
-
-              <strong>
-                {approvedComplaints.length}
-              </strong>
-
-            </div>
-
-          </div>
-
-
-          <div className="approver-stat-card rejected-card">
-
-            <div className="approver-stat-icon">
-              ✕
-            </div>
-
-            <div>
-
-              <span>
-                Rejected
-              </span>
-
-              <strong>
-                {rejectedComplaints.length}
-              </strong>
-
-            </div>
-
-          </div>
-
-
-          <div className="approver-stat-card total-card">
-
-            <div className="approver-stat-icon">
-              📋
-            </div>
-
-            <div>
-
-              <span>
-                Total Complaints
-              </span>
-
-              <strong>
-                {complaints.length}
-              </strong>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        {/* WORKFLOW */}
-
-        <section className="verification-workflow">
-
-          <div className="workflow-step completed">
-
-            <div className="workflow-number">
-              1
-            </div>
-
-            <div>
-
-              <strong>
-                Complaint Submitted
-              </strong>
-
-              <span>
-                Student or faculty reports an issue
-              </span>
-
-            </div>
-
-          </div>
-
-
-          <div className="workflow-line"></div>
-
-
-          <div className="workflow-step active">
-
-            <div className="workflow-number">
-              2
-            </div>
-
-            <div>
-
-              <strong>
-                Approver Verification
-              </strong>
-
-              <span>
-                Verify complaint authenticity
-              </span>
-
-            </div>
-
-          </div>
-
-
-          <div className="workflow-line"></div>
-
-
-          <div className="workflow-step">
-
-            <div className="workflow-number">
-              3
-            </div>
-
-            <div>
-
-              <strong>
-                Admin Resolution
-              </strong>
-
-              <span>
-                Forward approved complaints
-              </span>
-
-            </div>
-
-          </div>
-
-        </section>
-
-
-        {/* COMPLAINT LIST */}
-
-        <section className="approver-complaints-section">
-
-          <div className="approver-section-heading">
-
-            <div>
-
-              <p>
-                COMPLAINT QUEUE
-              </p>
-
-              <h2>
-                Pending Verification
-              </h2>
-
-            </div>
-
 
             <button
               className="refresh-btn"
               onClick={fetchComplaints}
             >
-              ↻ Refresh
+              <span>↻</span>
+              Refresh
             </button>
 
           </div>
 
+        </section>
+
+
+        {/* =================================================
+            STATISTICS
+        ================================================= */}
+
+        <section className="approver-stats">
+
+          {/* PENDING */}
+
+          <div
+            className="approver-stat-card pending-card"
+            onClick={() =>
+              handleFilterChange("PENDING")
+            }
+            style={{ cursor: "pointer" }}
+          >
+
+            <div className="stat-card-top">
+
+              <div className="stat-icon">
+                ⏳
+              </div>
+
+              <span className="stat-mini-label">
+                NEEDS ACTION
+              </span>
+
+            </div>
+
+            <div className="stat-number">
+              {pendingComplaints.length}
+            </div>
+
+            <div className="stat-title">
+              Pending Review
+            </div>
+
+            <div className="stat-description">
+              Complaints waiting for verification
+            </div>
+
+          </div>
+
+
+          {/* APPROVED */}
+
+          <div
+            className="approver-stat-card approved-card"
+            onClick={() =>
+              handleFilterChange("APPROVED")
+            }
+            style={{ cursor: "pointer" }}
+          >
+
+            <div className="stat-card-top">
+
+              <div className="stat-icon">
+                ✓
+              </div>
+
+              <span className="stat-mini-label">
+                VERIFIED
+              </span>
+
+            </div>
+
+            <div className="stat-number">
+              {approvedComplaints.length}
+            </div>
+
+            <div className="stat-title">
+              Approved
+            </div>
+
+            <div className="stat-description">
+              Complaints approved by approver
+            </div>
+
+          </div>
+
+
+          {/* REJECTED */}
+
+          <div
+            className="approver-stat-card rejected-card"
+            onClick={() =>
+              handleFilterChange("REJECTED")
+            }
+            style={{ cursor: "pointer" }}
+          >
+
+            <div className="stat-card-top">
+
+              <div className="stat-icon">
+                ×
+              </div>
+
+              <span className="stat-mini-label">
+                DECLINED
+              </span>
+
+            </div>
+
+            <div className="stat-number">
+              {rejectedComplaints.length}
+            </div>
+
+            <div className="stat-title">
+              Rejected
+            </div>
+
+            <div className="stat-description">
+              Complaints rejected during review
+            </div>
+
+          </div>
+
+
+          {/* TOTAL */}
+
+          <div
+            className="approver-stat-card total-card"
+            onClick={() =>
+              handleFilterChange("ALL")
+            }
+            style={{ cursor: "pointer" }}
+          >
+
+            <div className="stat-card-top">
+
+              <div className="stat-icon">
+                #
+              </div>
+
+              <span className="stat-mini-label">
+                ALL CASES
+              </span>
+
+            </div>
+
+            <div className="stat-number">
+              {totalComplaints}
+            </div>
+
+            <div className="stat-title">
+              Total Complaints
+            </div>
+
+            <div className="stat-description">
+              All complaints in the system
+            </div>
+
+          </div>
+
+        </section>
+
+
+        {/* =================================================
+            VERIFICATION WORKFLOW
+        ================================================= */}
+
+       
+        {/* =================================================
+            COMPLAINT QUEUE
+        ================================================= */}
+
+        <section
+          className="approver-complaints-section"
+          ref={complaintQueueRef}
+        >
+
+          <div className="queue-header">
+
+            <div>
+
+              <div className="queue-eyebrow">
+                COMPLAINT QUEUE
+              </div>
+
+              <div className="queue-title-row">
+
+                <h2>
+                  {getQueueTitle()}
+                </h2>
+
+                <span className="queue-count">
+                  {displayedComplaints.length}
+                </span>
+
+              </div>
+
+              <p>
+                {getQueueDescription()}
+              </p>
+
+            </div>
+
+
+            <button
+              className="queue-refresh"
+              onClick={fetchComplaints}
+            >
+              <span>↻</span>
+              Refresh Queue
+            </button>
+
+          </div>
+
+
+          {/* =================================================
+              LOADING
+          ================================================= */}
 
           {loading ? (
 
@@ -344,167 +558,283 @@ function ApproverDashboard({
 
               <div className="loading-spinner"></div>
 
+              <h3>
+                Loading complaints
+              </h3>
+
               <p>
-                Loading complaints...
+                Fetching the latest verification queue...
               </p>
 
             </div>
 
-          ) : pendingComplaints.length === 0 ? (
+          ) : displayedComplaints.length === 0 ? (
+
+            /* =================================================
+               EMPTY STATE
+            ================================================= */
 
             <div className="approver-empty">
 
-              <div>
-                🎉
+              <div className="empty-icon">
+                ✓
               </div>
 
               <h3>
-                No pending complaints
+                All caught up
               </h3>
 
               <p>
-                All submitted complaints have been reviewed.
+                There are no complaints in this category
+                at the moment.
               </p>
 
             </div>
 
           ) : (
 
-            <div className="approver-complaint-list">
+            /* =================================================
+               COMPLAINT GRID
+            ================================================= */
 
-              {pendingComplaints.map(
-                (complaint) => (
+            <div className="approver-complaint-grid">
 
-                  <div
-                    className="approver-complaint-card"
-                    key={complaint.issue_id}
-                    onClick={() =>
-                      onComplaintClick(complaint)
-                    }
-                  >
+              {displayedComplaints.map(
+                (complaint) => {
 
+                  const supportCount =
+                    getSupportCount(complaint);
 
-                    <div className="complaint-card-top">
+                  const supporters =
+                    getSupporters(complaint);
 
-                      <div className="complaint-category-icon">
+                  return (
 
-                        📌
+                    <article
+                      className="approver-complaint-card"
+                      key={complaint.issue_id}
+                      onClick={() =>
+                        onComplaintClick(complaint)
+                      }
+                    >
+
+                      {/* CARD TOP */}
+
+                      <div className="complaint-card-header">
+
+                        <div className="complaint-id">
+                          COMPLAINT #
+                          {complaint.issue_id}
+                        </div>
+
+                        <span className="pending-badge">
+
+                          <span className="badge-dot"></span>
+
+                          {complaint.status === "APPROVED" ||
+                          complaint.status === "VERIFIED"
+                            ? "Approved"
+                            : complaint.status === "REJECTED"
+                            ? "Rejected"
+                            : "Pending Review"}
+
+                        </span>
 
                       </div>
 
 
-                      <div className="complaint-main-info">
+                      {/* TITLE */}
 
-                        <div className="complaint-card-title-row">
+                      <div className="complaint-title-section">
 
-                          <h3>
-                            {complaint.title}
-                          </h3>
+                        <h3>
+                          {complaint.title ||
+                            "Untitled Complaint"}
+                        </h3>
+
+                        <p>
+                          {complaint.description ||
+                            "No description provided."}
+                        </p>
+
+                      </div>
 
 
-                          <span className="approver-pending-badge">
+                      {/* META */}
 
-                            Pending Review
+                      <div className="complaint-meta">
+
+                        <div className="meta-item">
+
+                          <span className="meta-icon">
+                            👤
+                          </span>
+
+                          <div>
+
+                            <small>
+                              REPORTED BY
+                            </small>
+
+                            <strong>
+                              {complaint.reported_by_name ||
+                                "Campus User"}
+                            </strong>
+
+                          </div>
+
+                        </div>
+
+
+                        <div className="meta-item">
+
+                          <span className="meta-icon">
+                            📍
+                          </span>
+
+                          <div>
+
+                            <small>
+                              LOCATION
+                            </small>
+
+                            <strong>
+                              {complaint.location ||
+                                "Campus Location"}
+                            </strong>
+
+                          </div>
+
+                        </div>
+
+
+                        <div className="meta-item">
+
+                          <span className="meta-icon">
+                            🗂
+                          </span>
+
+                          <div>
+
+                            <small>
+                              CATEGORY
+                            </small>
+
+                            <strong>
+                              {getCategory(complaint)}
+                            </strong>
+
+                          </div>
+
+                        </div>
+
+                      </div>
+
+
+                      {/* =================================================
+                          SUPPORT COUNT + VIEW PEOPLE
+                      ================================================= */}
+
+                      {supportCount > 0 && (
+
+                        <div
+                          className="complaint-support-info"
+                          onClick={(e) =>
+                            e.stopPropagation()
+                          }
+                        >
+
+                          <div className="support-count">
+
+                            👥{" "}
+                            {supportCount}{" "}
+                            {supportCount === 1
+                              ? "person"
+                              : "people"}{" "}
+                            forwarded this complaint
+
+                            {supporters.length > 0 && (
+
+                              <button
+                                type="button"
+                                className="view-people-btn"
+                                onClick={(e) => {
+
+                                  e.stopPropagation();
+
+                                  openSupportersModal(
+                                    complaint
+                                  );
+
+                                }}
+                              >
+                                View people →
+                              </button>
+
+                            )}
+
+                          </div>
+
+                        </div>
+
+                      )}
+
+
+                      {/* FOOTER */}
+
+                      <div className="complaint-card-footer">
+
+                        <div className="footer-left">
+
+                          <span
+                            className={`priority-badge ${getPriorityClass(
+                              complaint.priority
+                            )}`}
+                          >
+
+                            <span className="priority-dot"></span>
+
+                            {complaint.priority ||
+                              "MEDIUM"}
+
+                          </span>
+
+
+                          <span className="submitted-date">
+
+                            {formatDate(
+                              complaint.created_at ||
+                                complaint.submitted_at
+                            )}
 
                           </span>
 
                         </div>
 
 
-                        <p>
+                        <button
+                          className="review-complaint-btn"
+                          onClick={(e) => {
 
-                          {complaint.description}
+                            e.stopPropagation();
 
-                        </p>
+                            onComplaintClick(
+                              complaint
+                            );
+
+                          }}
+                        >
+                          Review
+                          <span>→</span>
+                        </button>
 
                       </div>
 
-                    </div>
+                    </article>
 
+                  );
 
-                    <div className="approver-complaint-meta">
-
-
-                      <span>
-
-                        👤
-                        {' '}
-                        {complaint.reported_by_name ||
-                          'Campus User'}
-
-                      </span>
-
-
-                      <span>
-
-                        📍
-                        {' '}
-                        {complaint.location ||
-                          'Campus Location'}
-
-                      </span>
-
-
-                      <span>
-
-                        🗂️
-                        {' '}
-                        {complaint.category_name ||
-                          'Other'}
-
-                      </span>
-
-
-                      <span
-                        className={`priority-badge ${
-                          (
-                            complaint.priority ||
-                            'MEDIUM'
-                          ).toLowerCase()
-                        }`}
-                      >
-
-                        ⚡
-                        {' '}
-                        {complaint.priority ||
-                          'MEDIUM'}
-
-                      </span>
-
-                    </div>
-
-
-                    <div className="approver-card-footer">
-
-                      <span>
-
-                        Complaint #
-                        {complaint.issue_id}
-
-                      </span>
-
-
-                      <button
-                        className="review-complaint-btn"
-                        onClick={(e) => {
-                          e.stopPropagation()
-
-                          onComplaintClick(
-                            complaint
-                          )
-                        }}
-                      >
-
-                        Review Complaint →
-
-                      </button>
-
-                    </div>
-
-
-                  </div>
-
-                )
+                }
               )}
 
             </div>
@@ -513,10 +843,151 @@ function ApproverDashboard({
 
         </section>
 
+
+        {/* =================================================
+            PEOPLE WHO FORWARDED MODAL
+        ================================================= */}
+
+        {showSupporters && (
+
+          <div
+            className="supporters-modal-overlay"
+            onClick={closeSupportersModal}
+          >
+
+            <div
+              className="supporters-modal"
+              onClick={(e) =>
+                e.stopPropagation()
+              }
+            >
+
+              {/* MODAL HEADER */}
+
+              <div className="supporters-modal-header">
+
+                <div>
+
+                  <div className="queue-eyebrow">
+                    COMPLAINT SUPPORT
+                  </div>
+
+                  <h2>
+                    People who forwarded this complaint
+                  </h2>
+
+                  <p>
+                    {selectedSupporters.length}{" "}
+                    {selectedSupporters.length === 1
+                      ? "person has"
+                      : "people have"}{" "}
+                    forwarded this complaint.
+                  </p>
+
+                </div>
+
+
+                <button
+                  className="supporters-close-btn"
+                  onClick={closeSupportersModal}
+                >
+                  ×
+                </button>
+
+              </div>
+
+
+              {/* PEOPLE LIST */}
+
+              <div className="supporters-list">
+
+                {selectedSupporters.length === 0 ? (
+
+                  <div className="supporters-empty">
+                    No supporter information available.
+                  </div>
+
+                ) : (
+
+                  selectedSupporters.map(
+                    (supporter, index) => (
+
+                      <div
+                        className="supporter-person"
+                        key={
+                          supporter.user_id ||
+                          index
+                        }
+                      >
+
+                        <div className="supporter-avatar">
+
+                          {supporter.name
+                            ?.charAt(0)
+                            ?.toUpperCase() || "U"}
+
+                        </div>
+
+
+                        <div className="supporter-person-info">
+
+                          <strong>
+                            {supporter.name ||
+                              "Campus User"}
+                          </strong>
+
+
+                          <div className="supporter-details">
+
+                            <span>
+                              🎓{" "}
+                              {supporter.year ||
+                                "Year not available"}
+                            </span>
+
+                            <span>
+                              💻{" "}
+                              {supporter.department ||
+                                "Branch not available"}
+                            </span>
+
+                          </div>
+
+                        </div>
+
+                      </div>
+
+                    )
+                  )
+
+                )}
+
+              </div>
+
+
+              {/* MODAL FOOTER */}
+
+              <div className="supporters-modal-footer">
+
+                <button
+                  className="supporters-done-btn"
+                  onClick={closeSupportersModal}
+                >
+                  Close
+                </button>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        )}
+
       </main>
 
     </div>
-  )
+  );
 }
 
-export default ApproverDashboard
+export default ApproverDashboard;

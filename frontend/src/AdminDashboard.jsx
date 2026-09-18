@@ -1,16 +1,18 @@
+
 import { useEffect, useState } from "react";
 import "./App.css";
 
 function AdminDashboard({ onLogout, onComplaintClick }) {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedFilter, setSelectedFilter] = useState("ALL");
 
   useEffect(() => {
     fetchComplaints();
   }, []);
 
   // =====================================================
-  // FETCH COMPLAINTS FOR ADMIN
+  // FETCH COMPLAINTS
   // =====================================================
 
   const fetchComplaints = async () => {
@@ -24,7 +26,6 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
       const data = await response.json();
 
       if (response.ok) {
-        // Only show complaints that have passed approver
         const adminComplaints = (data.issues || []).filter(
           (issue) =>
             issue.status === "VERIFIED" ||
@@ -37,10 +38,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
         console.error(data.message);
       }
     } catch (error) {
-      console.error(
-        "Failed to fetch complaints:",
-        error
-      );
+      console.error("Failed to fetch complaints:", error);
     } finally {
       setLoading(false);
     }
@@ -65,25 +63,137 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
   ).length;
 
   // =====================================================
+  // PRIORITY COUNTS
+  // =====================================================
+
+  const highPriorityComplaints = complaints.filter(
+    (issue) =>
+      (issue.priority || "").toUpperCase() === "HIGH"
+  ).length;
+
+  const mediumPriorityComplaints = complaints.filter(
+    (issue) =>
+      (issue.priority || "").toUpperCase() === "MEDIUM"
+  ).length;
+
+  const lowPriorityComplaints = complaints.filter(
+    (issue) =>
+      (issue.priority || "").toUpperCase() === "LOW"
+  ).length;
+
+  // =====================================================
+  // PRIORITY FILTER
+  // =====================================================
+
+  const filteredComplaints = complaints.filter((issue) => {
+    if (selectedFilter === "HIGH") {
+      return (
+        (issue.priority || "").toUpperCase() === "HIGH"
+      );
+    }
+
+    if (selectedFilter === "MEDIUM") {
+      return (
+        (issue.priority || "").toUpperCase() === "MEDIUM"
+      );
+    }
+
+    if (selectedFilter === "LOW") {
+      return (
+        (issue.priority || "").toUpperCase() === "LOW"
+      );
+    }
+
+    return true;
+  });
+
+  // =====================================================
+  // FILTER INFO
+  // =====================================================
+
+  const filterInfo = {
+    ALL: {
+      title: "All Complaints",
+      subtitle:
+        "Overview of all complaints currently handled by administration",
+    },
+
+    HIGH: {
+      title: "High Priority Complaints",
+      subtitle:
+        "Complaints requiring higher priority administrative attention",
+    },
+
+    MEDIUM: {
+      title: "Medium Priority Complaints",
+      subtitle:
+        "Complaints with medium administrative priority",
+    },
+
+    LOW: {
+      title: "Low Priority Complaints",
+      subtitle:
+        "Complaints with lower administrative priority",
+    },
+  };
+
+  const currentFilter = filterInfo[selectedFilter];
+
+  // =====================================================
+  // SELECT FILTER
+  // =====================================================
+
+  const selectFilter = (filter) => {
+    setSelectedFilter(filter);
+
+    setTimeout(() => {
+      document
+        .getElementById("complaints-section")
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+    }, 50);
+  };
+
+  // =====================================================
   // UI
   // =====================================================
 
   return (
     <div className="admin-page">
 
-      {/* NAVBAR */}
+      {/* =================================================
+          NAVBAR
+      ================================================= */}
 
       <nav className="admin-navbar">
 
         <div className="admin-logo">
-          🛡️ Campus Civic
+          <span className="admin-logo-icon">
+            🛡️
+          </span>
+
+          <div>
+            <strong>Campus Civic</strong>
+            <small>Administration</small>
+          </div>
         </div>
 
         <div className="admin-user">
 
-          <span>
-            Administrator
-          </span>
+          <div className="admin-user-info">
+
+            <div className="admin-avatar">
+              A
+            </div>
+
+            <div>
+              <strong>Administrator</strong>
+              <small>Admin Portal</small>
+            </div>
+
+          </div>
 
           <button
             className="admin-logout"
@@ -97,313 +207,358 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
       </nav>
 
 
-      {/* MAIN CONTENT */}
+      {/* =================================================
+          MAIN
+      ================================================= */}
 
       <main className="admin-content">
 
-        {/* HEADING */}
+        {/* =================================================
+            HERO
+        ================================================= */}
 
         <div className="admin-heading">
 
           <div>
 
-            <p className="admin-tagline">
+            <div className="admin-tagline">
+              <span className="online-dot"></span>
               ADMINISTRATION PORTAL
-            </p>
+            </div>
 
             <h1>
-              Admin Dashboard 👋
+              Admin Dashboard
             </h1>
 
             <p>
-              Manage verified campus complaints and track
+              Manage verified campus complaints and monitor
               their resolution progress.
             </p>
 
           </div>
 
+          <button
+            className="dashboard-refresh"
+            onClick={fetchComplaints}
+            disabled={loading}
+          >
+            <span className={loading ? "spin" : ""}>
+              ↻
+            </span>
+
+            {loading
+              ? "Refreshing..."
+              : "Refresh"}
+          </button>
+
         </div>
 
 
-        {/* STATISTICS */}
+        {/* =================================================
+            STAT CARDS
+        ================================================= */}
 
         <section className="admin-stats">
 
           {/* TOTAL */}
 
-          <div className="admin-stat-card">
+          <button
+            type="button"
+            className={`admin-stat-card total-card ${
+              selectedFilter === "ALL"
+                ? "stat-card-active"
+                : ""
+            }`}
+            onClick={() => selectFilter("ALL")}
+          >
 
-            <div className="stat-icon">
-              📋
-            </div>
+            <div className="stat-top">
 
-            <div>
+              <div className="stat-icon">
+                📋
+              </div>
 
-              <strong>
-                {totalComplaints}
-              </strong>
-
-              <span>
-                Total Complaints
+              <span className="stat-arrow">
+                →
               </span>
 
             </div>
 
-          </div>
+            <div className="stat-number">
+              {totalComplaints}
+            </div>
+
+            <div className="stat-label">
+              Total Complaints
+            </div>
+
+            <div className="stat-hint">
+              View all complaints
+            </div>
+
+          </button>
 
 
           {/* VERIFIED */}
 
-          <div className="admin-stat-card">
+          <button
+            type="button"
+            className={`admin-stat-card verified-card ${
+              selectedFilter === "VERIFIED"
+                ? "stat-card-active"
+                : ""
+            }`}
+            onClick={() => selectFilter("VERIFIED")}
+          >
 
-            <div className="stat-icon">
-              🔎
-            </div>
+            <div className="stat-top">
 
-            <div>
+              <div className="stat-icon">
+                🔎
+              </div>
 
-              <strong>
-                {verifiedComplaints}
-              </strong>
-
-              <span>
-                Awaiting Action
+              <span className="stat-arrow">
+                →
               </span>
 
             </div>
 
-          </div>
-
-
-          {/* IN PROGRESS */}
-
-          <div className="admin-stat-card">
-
-            <div className="stat-icon">
-              🔄
+            <div className="stat-number">
+              {verifiedComplaints}
             </div>
 
-            <div>
+            <div className="stat-label">
+              Awaiting Action
+            </div>
 
-              <strong>
-                {progressComplaints}
-              </strong>
+            <div className="stat-hint">
+              Need administrative action
+            </div>
 
-              <span>
-                In Progress
+          </button>
+
+
+          {/* PROGRESS */}
+
+          <button
+            type="button"
+            className={`admin-stat-card progress-card ${
+              selectedFilter === "IN_PROGRESS"
+                ? "stat-card-active"
+                : ""
+            }`}
+            onClick={() =>
+              selectFilter("IN_PROGRESS")
+            }
+          >
+
+            <div className="stat-top">
+
+              <div className="stat-icon">
+                🔄
+              </div>
+
+              <span className="stat-arrow">
+                →
               </span>
 
             </div>
 
-          </div>
+            <div className="stat-number">
+              {progressComplaints}
+            </div>
+
+            <div className="stat-label">
+              In Progress
+            </div>
+
+            <div className="stat-hint">
+              Currently being handled
+            </div>
+
+          </button>
 
 
           {/* RESOLVED */}
 
-          <div className="admin-stat-card">
+          <button
+            type="button"
+            className={`admin-stat-card resolved-card ${
+              selectedFilter === "RESOLVED"
+                ? "stat-card-active"
+                : ""
+            }`}
+            onClick={() =>
+              selectFilter("RESOLVED")
+            }
+          >
 
-            <div className="stat-icon">
-              ✅
-            </div>
+            <div className="stat-top">
 
-            <div>
+              <div className="stat-icon">
+                ✓
+              </div>
 
-              <strong>
-                {resolvedComplaints}
-              </strong>
-
-              <span>
-                Resolved
+              <span className="stat-arrow">
+                →
               </span>
 
             </div>
 
-          </div>
+            <div className="stat-number">
+              {resolvedComplaints}
+            </div>
+
+            <div className="stat-label">
+              Resolved
+            </div>
+
+            <div className="stat-hint">
+              Successfully completed
+            </div>
+
+          </button>
 
         </section>
 
 
-        {/* QUICK ACTIONS */}
+        {/* =================================================
+            COMPLAINT SECTION
+        ================================================= */}
 
-        <section className="admin-section">
+        <section
+          className="admin-section complaints-panel"
+          id="complaints-section"
+        >
 
-          <div className="section-title">
+          {/* SECTION HEADER */}
 
-            <h2>
-              Quick Actions
-            </h2>
-
-          </div>
-
-
-          <div className="admin-actions">
-
-            {/* REFRESH */}
-
-            <button
-              className="admin-action-card"
-              onClick={fetchComplaints}
-            >
-
-              <span>
-                🔄
-              </span>
-
-              <div>
-
-                <strong>
-                  Refresh Complaints
-                </strong>
-
-                <small>
-                  Get latest verified complaints
-                </small>
-
-              </div>
-
-            </button>
-
-
-            {/* HIGH PRIORITY */}
-
-            <button
-              className="admin-action-card"
-              onClick={() => {
-
-                const highPriority =
-                  complaints.filter(
-                    (issue) =>
-                      issue.priority === "HIGH"
-                  );
-
-                alert(
-                  highPriority.length === 0
-                    ? "No high priority complaints."
-                    : `${highPriority.length} high priority complaint(s) found.`
-                );
-
-              }}
-            >
-
-              <span>
-                🔴
-              </span>
-
-              <div>
-
-                <strong>
-                  High Priority
-                </strong>
-
-                <small>
-                  View urgent complaints
-                </small>
-
-              </div>
-
-            </button>
-
-
-            {/* AWAITING ACTION */}
-
-            <button
-              className="admin-action-card"
-              onClick={() => {
-
-                alert(
-                  `${verifiedComplaints} complaint(s) are awaiting administrative action.`
-                );
-
-              }}
-            >
-
-              <span>
-                ⏳
-              </span>
-
-              <div>
-
-                <strong>
-                  Awaiting Action
-                </strong>
-
-                <small>
-                  Verified by approver
-                </small>
-
-              </div>
-
-            </button>
-
-
-            {/* RESOLVED */}
-
-            <button
-              className="admin-action-card"
-              onClick={() => {
-
-                alert(
-                  `${resolvedComplaints} complaint(s) have been resolved.`
-                );
-
-              }}
-            >
-
-              <span>
-                ✅
-              </span>
-
-              <div>
-
-                <strong>
-                  Resolved Issues
-                </strong>
-
-                <small>
-                  Successfully completed
-                </small>
-
-              </div>
-
-            </button>
-
-          </div>
-
-        </section>
-
-
-        {/* RECENT COMPLAINTS */}
-
-        <section className="admin-section">
-
-          <div className="section-title">
+          <div className="complaints-header">
 
             <div>
+
+              <div className="section-eyebrow">
+                COMPLAINT MANAGEMENT
+              </div>
 
               <h2>
-                Verified Complaints
+                {currentFilter.title}
               </h2>
 
               <p>
-                Complaints approved by the verification team
+                {currentFilter.subtitle}
               </p>
 
             </div>
 
+            <div className="complaint-count">
+
+              <strong>
+                {filteredComplaints.length}
+              </strong>
+
+              <span>
+                {filteredComplaints.length === 1
+                  ? "Complaint"
+                  : "Complaints"}
+              </span>
+
+            </div>
+
+          </div>
+
+
+          {/* =================================================
+              PRIORITY FILTER TABS
+          ================================================= */}
+
+          <div className="complaint-filters">
+
+            {/* ALL */}
 
             <button
-              className="view-all-btn"
-              onClick={fetchComplaints}
+              className={
+                selectedFilter === "ALL"
+                  ? "filter-active"
+                  : ""
+              }
+              onClick={() =>
+                selectFilter("ALL")
+              }
             >
-              Refresh
+              All
+              <span>
+                {totalComplaints}
+              </span>
+            </button>
+
+
+            {/* HIGH */}
+
+            <button
+              className={
+                selectedFilter === "HIGH"
+                  ? "filter-active"
+                  : ""
+              }
+              onClick={() =>
+                selectFilter("HIGH")
+              }
+            >
+              High
+              <span>
+                {highPriorityComplaints}
+              </span>
+            </button>
+
+
+            {/* MEDIUM */}
+
+            <button
+              className={
+                selectedFilter === "MEDIUM"
+                  ? "filter-active"
+                  : ""
+              }
+              onClick={() =>
+                selectFilter("MEDIUM")
+              }
+            >
+              Medium
+              <span>
+                {mediumPriorityComplaints}
+              </span>
+            </button>
+
+
+            {/* LOW */}
+
+            <button
+              className={
+                selectedFilter === "LOW"
+                  ? "filter-active"
+                  : ""
+              }
+              onClick={() =>
+                selectFilter("LOW")
+              }
+            >
+              Low
+              <span>
+                {lowPriorityComplaints}
+              </span>
             </button>
 
           </div>
 
 
+          {/* =================================================
+              TABLE
+          ================================================= */}
+
           <div className="complaint-table">
 
-            {/* TABLE HEADER */}
+            {/* HEADER */}
 
             <div className="table-header">
 
@@ -431,7 +586,19 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             {loading && (
 
               <div className="empty-complaints">
-                Loading complaints...
+
+                <div className="loading-spinner">
+                  ↻
+                </div>
+
+                <strong>
+                  Loading complaints
+                </strong>
+
+                <p>
+                  Fetching the latest complaint data...
+                </p>
+
               </div>
 
             )}
@@ -440,21 +607,21 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             {/* EMPTY */}
 
             {!loading &&
-              complaints.length === 0 && (
+              filteredComplaints.length === 0 && (
 
               <div className="empty-complaints">
 
-                <div>
+                <div className="empty-icon">
                   📭
                 </div>
 
                 <strong>
-                  No verified complaints
+                  No complaints found
                 </strong>
 
                 <p>
-                  Complaints approved by the approver
-                  will appear here.
+                  There are currently no complaints
+                  in this priority.
                 </p>
 
               </div>
@@ -462,39 +629,51 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             )}
 
 
-            {/* COMPLAINT LIST */}
+            {/* COMPLAINTS */}
 
             {!loading &&
-              complaints.map((issue) => (
+              filteredComplaints.map((issue) => (
 
               <div
                 className="complaint-row complaint-clickable"
-
                 key={issue.issue_id}
-
                 onClick={() =>
                   onComplaintClick(issue)
                 }
               >
 
-                {/* TITLE */}
+                {/* COMPLAINT */}
 
-                <div>
+                <div className="complaint-main">
 
-                  <strong>
-                    {issue.title}
-                  </strong>
+                  <div className="complaint-icon">
 
-                  <small>
-                    📍 {issue.location}
-                  </small>
+                    {issue.status === "RESOLVED"
+                      ? "✓"
+                      : issue.status === "IN_PROGRESS"
+                      ? "↻"
+                      : "!"}
+
+                  </div>
+
+                  <div className="complaint-info">
+
+                    <strong>
+                      {issue.title}
+                    </strong>
+
+                    <small>
+                      📍 {issue.location}
+                    </small>
+
+                  </div>
 
                 </div>
 
 
                 {/* CATEGORY */}
 
-                <span>
+                <span className="category-text">
                   {issue.category_name ||
                     "General"}
                 </span>
@@ -508,6 +687,8 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
                     "medium"
                   }`}
                 >
+
+                  <span className="priority-dot"></span>
 
                   {issue.priority ||
                     "MEDIUM"}
@@ -526,6 +707,8 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
                       : "pending-status"
                   }`}
                 >
+
+                  <span className="status-dot"></span>
 
                   {issue.status === "VERIFIED"
                     ? "VERIFIED"

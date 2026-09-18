@@ -1,131 +1,167 @@
-import { useState } from "react";
-import "./App.css";
+import { useEffect, useState } from "react";
+import "./ApproverDashboard.css";
 
-function AdminComplaintDetails({ complaint, onBack, currentUser }) {
+function AdminComplaintDetails({ complaint, onBack }) {
   const [status, setStatus] = useState(
     complaint?.status || "PENDING"
   );
 
-  const [resolutionNote, setResolutionNote] = useState(
-    complaint?.resolution_note || ""
-  );
-  const [proofImage, setProofImage]   = useState(null);
-  const [saving,     setSaving]       = useState(false);
-  const [saveError,  setSaveError]    = useState(null);
-  const [savedOk,    setSavedOk]      = useState(false);
+  const [resolutionNote, setResolutionNote] = useState("");
+  const [proofImage, setProofImage] = useState(null);
 
-  const handleProofUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) setProofImage(file);
-  };
+  const [feedback, setFeedback] = useState(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(true);
 
-  const handleUpdate = async (e) => {
-    e.preventDefault();
-    setSaveError(null);
-    setSavedOk(false);
+  /* =====================================================
+     FETCH FEEDBACK
+  ===================================================== */
 
-    // ── LOCAL VALIDATION ────────────────────────
-    if (status === "RESOLVED") {
-      if (!resolutionNote.trim()) {
-        setSaveError("Please enter a resolution note before marking as Resolved.");
+  useEffect(() => {
+    const fetchFeedback = async () => {
+      if (!complaint?.issue_id) {
+        setFeedbackLoading(false);
         return;
       }
-    }
 
-    setSaving(true);
+      setFeedbackLoading(true);
 
-    try {
-      const res = await fetch(
-        `http://localhost:5000/api/issues/${complaint.issue_id}/status`,
-        {
-          method:  "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status,
-            resolution_note:      resolutionNote || null,
-            resolution_image_url: null,          // image upload in Phase 5
-            changed_by:           currentUser?.user_id || null,
-          }),
+      try {
+        const response = await fetch(
+          `http://localhost:5000/api/issues/${complaint.issue_id}/feedback`
+        );
+
+        const data = await response.json();
+
+        if (response.ok && data.feedback) {
+          setFeedback(data.feedback);
+        } else {
+          setFeedback(null);
         }
-      );
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setSaveError(data.message || "Failed to update complaint.");
-        return;
+      } catch (error) {
+        console.error("FEEDBACK FETCH ERROR:", error);
+        setFeedback(null);
+      } finally {
+        setFeedbackLoading(false);
       }
+    };
 
-      setSavedOk(true);
+    fetchFeedback();
+  }, [complaint?.issue_id]);
 
-      // Go back to dashboard after short delay
-      setTimeout(() => onBack(), 1200);
+  if (!complaint) {
+    return (
+      <div className="admin-detail-page">
+        <div className="admin-detail-empty">
+          <h2>Complaint not found</h2>
 
-    } catch (err) {
-      setSaveError("Could not connect to server. Is the backend running?");
-    } finally {
-      setSaving(false);
+          <button
+            className="detail-back-btn"
+            onClick={onBack}
+          >
+            ← Back to Complaints
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isResolved = complaint.status === "RESOLVED";
+
+  /* =====================================================
+     STATUS
+  ===================================================== */
+
+  const formattedStatus =
+    complaint.status === "IN_PROGRESS"
+      ? "IN PROGRESS"
+      : complaint.status;
+
+  /* =====================================================
+     UPDATE COMPLAINT
+  ===================================================== */
+const handleUpdate = async () => {
+  if (
+    status === "RESOLVED" &&
+    (!resolutionNote.trim() || !proofImage)
+  ) {
+    alert("Resolution note and proof photo are required.");
+    return;
+  }
+
+  try {
+    const formData = new FormData();
+
+    formData.append("status", status);
+    formData.append("resolution_note", resolutionNote);
+
+    if (proofImage) {
+      formData.append("resolution_image", proofImage);
     }
-  };
 
-  const complaintTitle =
-    complaint?.title || "Library AC not working";
+    const response = await fetch(
+      `http://localhost:5000/api/issues/${complaint.issue_id}/status`,
+      {
+        method: "PUT",
+        body: formData,
+      }
+    );
 
-  const complaintId =
-    complaint?.issue_id || "024";
+    const data = await response.json();
 
-  const reporterName =
-    complaint?.reported_by_name || "Rahul Sharma";
+    console.log("UPDATE RESPONSE:", data);
 
-  const department =
-    complaint?.department_name ||
-    "Information Technology";
+    if (response.ok) {
+      alert("Complaint updated successfully.");
+      onBack();
+    } else {
+      alert(data.message || "Failed to update complaint.");
+    }
+  } catch (error) {
+    console.error("UPDATE COMPLAINT ERROR:", error);
+    alert("Something went wrong while updating complaint.");
+  }
+};
+ 
 
-  const category =
-    complaint?.category_name || "Electricity";
+  /* =====================================================
+     RESOLUTION IMAGE
+  ===================================================== */
 
-  const location =
-    complaint?.location || "Central Library";
-
-  const description =
-    complaint?.description ||
-    "The AC in the central library has not been working for the last two days. Students are facing difficulty while studying.";
-
-  const statusText = status.replace("_", " ");
+  const resolutionImage = complaint.resolution_image_url
+    ? complaint.resolution_image_url.startsWith("http")
+      ? complaint.resolution_image_url
+      : `http://localhost:5000${complaint.resolution_image_url}`
+    : null;
 
   return (
-    <div className="admin-details-page">
+    <div className="admin-detail-page">
 
       {/* =================================================
           NAVBAR
       ================================================= */}
 
-      <nav className="admin-navbar">
+      <nav className="detail-navbar">
 
-        <div className="admin-logo">
-          <div className="admin-logo-icon">
+        <div className="detail-brand">
+          <div className="detail-brand-icon">
             🛡️
           </div>
 
-          <div>
+          <div className="detail-brand-text">
             <strong>Campus Civic</strong>
             <span>Administration Portal</span>
           </div>
         </div>
 
-        <div className="admin-nav-right">
+        <div className="detail-user">
 
-          <div className="admin-profile">
+          <div className="detail-avatar">
+            A
+          </div>
 
-            <div className="admin-profile-avatar">
-              A
-            </div>
-
-            <div>
-              <strong>Administrator</strong>
-              <span>Campus Admin</span>
-            </div>
-
+          <div className="detail-user-text">
+            <strong>Administrator</strong>
+            <span>Campus Admin</span>
           </div>
 
         </div>
@@ -134,79 +170,166 @@ function AdminComplaintDetails({ complaint, onBack, currentUser }) {
 
 
       {/* =================================================
-          MAIN CONTENT
+          MAIN
       ================================================= */}
 
-      <main className="admin-details-content">
+      <main className="detail-content">
 
         {/* BACK */}
 
         <button
-          className="details-back-btn"
+          className="detail-back-btn"
           onClick={onBack}
         >
-          <span>←</span>
-          Back to Complaints
+          ← Back to Complaints
         </button>
 
 
         {/* =================================================
-            COMPLAINT HEADER
+            HERO
         ================================================= */}
 
-        <section className="complaint-detail-header">
+        <section className="complaint-hero">
 
-          <div className="complaint-header-left">
+          <div className="hero-left">
 
-            <div className="complaint-breadcrumb">
-              ADMIN PANEL
-              <span>/</span>
-              COMPLAINT DETAILS
+            <div className="hero-topline">
+
+              <span className="hero-label">
+                COMPLAINT #{complaint.issue_id}
+              </span>
+
+              <span className="hero-separator">
+                •
+              </span>
+
+              <span className="hero-type">
+                CAMPUS ISSUE
+              </span>
+
             </div>
 
-            <div className="complaint-title-row">
+            <h1>
+              {complaint.title}
+            </h1>
 
-              <div className="complaint-main-icon">
-                📢
-              </div>
+            <div className="hero-tags">
 
-              <div>
+              <span>
+                {complaint.category_name || "General"}
+              </span>
 
-                <h1>
-                  {complaintTitle}
-                </h1>
+              <span>
+                {complaint.location ||
+                  "Location not specified"}
+              </span>
 
-                <div className="complaint-meta">
-
-                  <span>
-                    Complaint #{complaintId}
-                  </span>
-
-                  <span className="meta-dot">
-                    •
-                  </span>
-
-                  <span>
-                    Campus Issue
-                  </span>
-
-                </div>
-
-              </div>
+              <span
+                className={`priority-pill ${
+                  complaint.priority?.toLowerCase() ||
+                  "medium"
+                }`}
+              >
+                {complaint.priority || "MEDIUM"}
+              </span>
 
             </div>
 
           </div>
 
+          <div
+            className={`hero-status ${
+              complaint.status
+                ?.toLowerCase()
+                .replace("_", "-")
+            }`}
+          >
+            <span className="status-dot"></span>
 
-          <div className="complaint-header-right">
+            {formattedStatus}
+          </div>
 
-            <span
-              className={`status ${status.toLowerCase()}`}
-            >
-              <span className="status-dot"></span>
-              {statusText}
-            </span>
+        </section>
+
+
+        {/* =================================================
+            INFORMATION STRIP
+        ================================================= */}
+
+        <section className="complaint-info-strip">
+
+          <div className="info-item">
+
+            <div className="info-icon">
+              👤
+            </div>
+
+            <div>
+              <small>REPORTED BY</small>
+
+              <strong>
+                {complaint.reporter_name ||
+                  "Test Student"}
+              </strong>
+            </div>
+
+          </div>
+
+
+          <div className="info-item">
+
+            <div className="info-icon">
+              📍
+            </div>
+
+            <div>
+              <small>LOCATION</small>
+
+              <strong>
+                {complaint.location ||
+                  "Not specified"}
+              </strong>
+            </div>
+
+          </div>
+
+
+          <div className="info-item">
+
+            <div className="info-icon">
+              ⚡
+            </div>
+
+            <div>
+              <small>PRIORITY</small>
+
+              <strong
+                className={`priority-text ${
+                  complaint.priority?.toLowerCase() ||
+                  "medium"
+                }`}
+              >
+                {complaint.priority || "MEDIUM"}
+              </strong>
+            </div>
+
+          </div>
+
+
+          <div className="info-item">
+
+            <div className="info-icon">
+              🏢
+            </div>
+
+            <div>
+              <small>DEPARTMENT</small>
+
+              <strong>
+                {complaint.department_name ||
+                  "Campus Maintenance"}
+              </strong>
+            </div>
 
           </div>
 
@@ -214,120 +337,83 @@ function AdminComplaintDetails({ complaint, onBack, currentUser }) {
 
 
         {/* =================================================
-            QUICK INFO
+            FULL WIDTH COMPLAINT AREA
         ================================================= */}
 
-        <div className="complaint-quick-info">
-
-          <div className="quick-info-item">
-
-            <div className="quick-icon">
-              👤
-            </div>
-
-            <div>
-              <span>Reported By</span>
-              <strong>{reporterName}</strong>
-            </div>
-
-          </div>
-
-
-          <div className="quick-info-item">
-
-            <div className="quick-icon">
-              📁
-            </div>
-
-            <div>
-              <span>Category</span>
-              <strong>{category}</strong>
-            </div>
-
-          </div>
-
-
-          <div className="quick-info-item">
-
-            <div className="quick-icon">
-              📍
-            </div>
-
-            <div>
-              <span>Location</span>
-              <strong>{location}</strong>
-            </div>
-
-          </div>
-
-
-          <div className="quick-info-item">
-
-            <div className="quick-icon">
-              ⚡
-            </div>
-
-            <div>
-              <span>Priority</span>
-              <strong className="high-text">
-                High
-              </strong>
-            </div>
-
-          </div>
-
-        </div>
-
-
-        {/* =================================================
-            MAIN GRID
-        ================================================= */}
-
-        <div className="complaint-detail-grid">
+        <div className="admin-detail-full-layout">
 
 
           {/* =================================================
-              LEFT COLUMN
+              COMPLAINT DESCRIPTION
           ================================================= */}
 
-          <div className="details-left-column">
+          <section className="detail-card complaint-main-card">
+
+            <div className="section-heading">
+
+              <div className="section-icon">
+                📝
+              </div>
+
+              <div>
+                <span>COMPLAINT</span>
+
+                <h2>
+                  Issue Description
+                </h2>
+              </div>
+
+            </div>
+
+            <div className="complaint-description">
+              {complaint.description ||
+                "No description provided."}
+            </div>
+
+          </section>
 
 
-            {/* REPORTER INFORMATION */}
+          {/* =================================================
+              INFORMATION ROW
+          ================================================= */}
 
-            <section className="detail-card">
+          <div className="detail-info-row">
 
-              <div className="detail-card-header">
 
-                <div className="detail-heading-icon">
+            {/* REPORTER */}
+
+            <section className="detail-card reporter-card">
+
+              <div className="section-heading">
+
+                <div className="section-icon">
                   👤
                 </div>
 
                 <div>
+                  <span>REPORTER</span>
 
                   <h2>
-                    Reporter Information
+                    Submitted By
                   </h2>
-
-                  <p>
-                    Details about the person who reported this issue
-                  </p>
-
                 </div>
 
               </div>
 
+              <div className="reporter-main">
 
-              <div className="reporter-profile">
-
-                <div className="reporter-avatar">
-                  {reporterName.charAt(0)}
+                <div className="reporter-avatar-large">
+                  {(complaint.reporter_name ||
+                    "T")
+                    .charAt(0)
+                    .toUpperCase()}
                 </div>
 
-                <div className="reporter-main">
+                <div className="reporter-name">
 
                   <strong>
-                    {reporterName}
+                    {complaint.reporter_name ||
+                      "Test Student"}
                   </strong>
 
                   <span>
@@ -338,50 +424,25 @@ function AdminComplaintDetails({ complaint, onBack, currentUser }) {
 
               </div>
 
+              <div className="reporter-meta">
 
-              <div className="detail-info-grid">
-
-                <div className="info-item">
-
-                  <span>Department</span>
+                <div>
+                  <small>Department</small>
 
                   <strong>
-                    {department}
+                    {complaint.reporter_department ||
+                      complaint.department_name ||
+                      "Information Technology"}
                   </strong>
-
                 </div>
 
-
-                <div className="info-item">
-
-                  <span>Year</span>
+                <div>
+                  <small>Year</small>
 
                   <strong>
-                    3rd Year
+                    {complaint.year ||
+                      "3rd Year"}
                   </strong>
-
-                </div>
-
-
-                <div className="info-item">
-
-                  <span>Category</span>
-
-                  <strong>
-                    {category}
-                  </strong>
-
-                </div>
-
-
-                <div className="info-item">
-
-                  <span>Location</span>
-
-                  <strong>
-                    {location}
-                  </strong>
-
                 </div>
 
               </div>
@@ -389,336 +450,131 @@ function AdminComplaintDetails({ complaint, onBack, currentUser }) {
             </section>
 
 
-            {/* DESCRIPTION */}
+            {/* CASE STATUS */}
 
-            <section className="detail-card">
+            <section className="detail-card status-card">
 
-              <div className="detail-card-header">
+              <div className="section-heading">
 
-                <div className="detail-heading-icon">
-                  📝
+                <div className="section-icon">
+                  ◉
                 </div>
 
                 <div>
+                  <span>CASE STATUS</span>
 
                   <h2>
-                    Complaint Description
+                    Complaint Progress
                   </h2>
-
-                  <p>
-                    Issue details provided by the reporter
-                  </p>
-
                 </div>
 
               </div>
 
+              <div className="case-timeline">
 
-              <div className="description-box">
+                <div className="case-step completed">
 
-                <p>
-                  {description}
-                </p>
-
-              </div>
-
-            </section>
-
-
-            {/* PRIORITY */}
-
-            <section className="detail-card">
-
-              <div className="detail-card-header">
-
-                <div className="detail-heading-icon">
-                  ⚡
-                </div>
-
-                <div>
-
-                  <h2>
-                    Priority Level
-                  </h2>
-
-                  <p>
-                    Current priority assigned to this complaint
-                  </p>
-
-                </div>
-
-              </div>
-
-
-              <div className="priority-display">
-
-                <div className="priority-indicator">
-                  !
-                </div>
-
-                <div>
-
-                  <strong>
-                    High Priority
-                  </strong>
-
-                  <span>
-                    Requires prompt attention from the administration.
-                  </span>
-
-                </div>
-
-              </div>
-
-            </section>
-
-
-            {/* RESOLUTION PROOF */}
-
-            <section className="detail-card">
-
-              <div className="detail-card-header">
-
-                <div className="detail-heading-icon">
-                  📷
-                </div>
-
-                <div>
-
-                  <h2>
-                    Resolution Proof
-                  </h2>
-
-                  <p>
-                    Upload evidence after resolving the complaint
-                  </p>
-
-                </div>
-
-              </div>
-
-
-              <label className="proof-upload">
-
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleProofUpload}
-                />
-
-                {proofImage ? (
-
-                  <div className="uploaded-file">
-
-                    <div className="uploaded-icon">
-                      📷
-                    </div>
-
-                    <div>
-
-                      <strong>
-                        {proofImage.name}
-                      </strong>
-
-                      <small>
-                        Proof photo selected successfully
-                      </small>
-
-                    </div>
-
-                    <span className="upload-check">
-                      ✓
-                    </span>
-
+                  <div className="case-marker">
+                    ✓
                   </div>
 
-                ) : (
-
-                  <div className="upload-placeholder">
-
-                    <div className="upload-icon">
-                      ⬆
-                    </div>
+                  <div className="case-step-content">
 
                     <strong>
-                      Upload Resolution Photo
-                    </strong>
-
-                    <small>
-                      Click to browse • JPG, PNG or WEBP
-                    </small>
-
-                  </div>
-
-                )}
-
-              </label>
-
-            </section>
-
-          </div>
-
-
-          {/* =================================================
-              RIGHT COLUMN
-          ================================================= */}
-
-          <aside className="details-right-column">
-
-
-            {/* ADMIN ACTION */}
-
-            <section className="action-card">
-
-              <div className="action-card-header">
-
-                <div className="action-icon">
-                  ⚙️
-                </div>
-
-                <div>
-
-                  <h2>
-                    Admin Action
-                  </h2>
-
-                  <p>
-                    Manage complaint status
-                  </p>
-
-                </div>
-
-              </div>
-
-
-              <form onSubmit={handleUpdate}>
-
-                <div className="form-group">
-
-                  <label>
-                    Complaint Status
-                  </label>
-
-                  <select
-                    value={status}
-                    onChange={(e) =>
-                      setStatus(e.target.value)
-                    }
-                  >
-
-                    <option value="PENDING">
-                      Pending
-                    </option>
-
-                    <option value="IN_PROGRESS">
-                      In Progress
-                    </option>
-
-                    <option value="RESOLVED">
-                      Resolved
-                    </option>
-
-                    <option value="REJECTED">
-                      Rejected
-                    </option>
-
-                  </select>
-
-                </div>
-
-
-                <div className="form-group">
-
-                  <label>
-                    Resolution Note
-                  </label>
-
-                  <textarea
-                    placeholder="Describe the action taken to resolve this complaint..."
-                    value={resolutionNote}
-                    onChange={(e) =>
-                      setResolutionNote(e.target.value)
-                    }
-                    rows="6"
-                  />
-
-                  <small className="textarea-hint">
-                    Explain what was done to address the issue.
-                  </small>
-
-                </div>
-
-
-                {status === "RESOLVED" && (
-
-                  <div className="required-message">
-
-                    <strong>
-                      ⚠ Resolution requirements
+                      Complaint Reported
                     </strong>
 
                     <span>
-                      A resolution note and proof photo are required before marking this complaint as resolved.
+                      Issue submitted by student
                     </span>
 
                   </div>
 
-                )}
+                </div>
 
+                <div className="case-line"></div>
 
+                <div className="case-step completed">
 
-                {/* ERROR / SUCCESS FEEDBACK */}
-                {saveError && (
-                  <div className="required-message" style={{ borderColor: "#ef4444", background: "rgba(239,68,68,0.08)" }}>
-                    <strong>⚠ Error</strong>
-                    <span>{saveError}</span>
+                  <div className="case-marker">
+                    ✓
                   </div>
-                )}
 
-                {savedOk && (
-                  <div className="required-message" style={{ borderColor: "#10b981", background: "rgba(16,185,129,0.08)" }}>
-                    <strong>✅ Saved!</strong>
-                    <span>Complaint updated successfully. Returning to dashboard…</span>
+                  <div className="case-step-content">
+
+                    <strong>
+                      Under Review
+                    </strong>
+
+                    <span>
+                      Administration reviewed
+                      the complaint
+                    </span>
+
                   </div>
-                )}
 
-                <button
-                  type="submit"
-                  className="update-complaint-btn"
-                  disabled={saving || savedOk}
-                  style={{ opacity: (saving || savedOk) ? 0.7 : 1 }}
+                </div>
+
+                <div className="case-line"></div>
+
+                <div
+                  className={`case-step ${
+                    isResolved
+                      ? "completed"
+                      : "current"
+                  }`}
                 >
-                  <span>{saving ? "⏳" : savedOk ? "✅" : "✓"}</span>
-                  {saving ? "Saving…" : savedOk ? "Saved!" : "Update Complaint"}
-                </button>
 
-              </form>
+                  <div className="case-marker">
+                    {isResolved ? "✓" : "•"}
+                  </div>
+
+                  <div className="case-step-content">
+
+                    <strong>
+                      {isResolved
+                        ? "Resolved"
+                        : formattedStatus}
+                    </strong>
+
+                    <span>
+                      {isResolved
+                        ? "Complaint successfully completed"
+                        : "Current complaint status"}
+                    </span>
+
+                  </div>
+
+                </div>
+
+              </div>
 
             </section>
 
 
             {/* ASSIGNMENT */}
 
-            <section className="assignment-card">
+            <section className="detail-card department-card">
 
-              <div className="assignment-header">
+              <div className="section-heading">
+
+                <div className="section-icon">
+                  🏢
+                </div>
 
                 <div>
-                  <h3>
-                    Assigned Department
-                  </h3>
+                  <span>ASSIGNMENT</span>
 
-                  <p>
-                    Responsible for resolving this issue
-                  </p>
+                  <h2>
+                    Responsible Department
+                  </h2>
                 </div>
 
               </div>
 
+              <div className="department-row">
 
-              <div className="assigned-admin">
-
-                <div className="admin-avatar">
+                <div className="department-letter">
                   E
                 </div>
 
@@ -738,84 +594,424 @@ function AdminComplaintDetails({ complaint, onBack, currentUser }) {
 
             </section>
 
+          </div>
 
-            {/* COMPLAINT TIMELINE */}
 
-            <section className="timeline-card">
+          {/* =================================================
+              FEEDBACK + RESOLUTION
+          ================================================= */}
 
-              <h3>
-                Complaint Timeline
-              </h3>
+          <div className="detail-bottom-row">
 
-              <div className="timeline">
 
-                <div className="timeline-item active">
+            {/* FEEDBACK */}
 
-                  <div className="timeline-dot">
-                    ✓
+            <section className="detail-card feedback-card">
+
+              <div className="section-heading">
+
+                <div className="section-icon feedback-section-icon">
+                  ★
+                </div>
+
+                <div>
+                  <span>USER FEEDBACK</span>
+
+                  <h2>
+                    Reporter Response
+                  </h2>
+                </div>
+
+              </div>
+
+              {feedbackLoading ? (
+
+                <div className="feedback-loading">
+                  Loading feedback...
+                </div>
+
+              ) : feedback ? (
+
+                <div className="feedback-result">
+
+                  <div className="feedback-score">
+
+                    <div className="feedback-stars">
+
+                      {[1, 2, 3, 4, 5].map(
+                        (star) => (
+                          <span
+                            key={star}
+                            className={
+                              Number(
+                                feedback.rating
+                              ) >= star
+                                ? "star-active"
+                                : "star-inactive"
+                            }
+                          >
+                            ★
+                          </span>
+                        )
+                      )}
+
+                    </div>
+
+                    <strong>
+                      {feedback.rating}/5
+                    </strong>
+
                   </div>
+
+                  {feedback.comment ? (
+
+                    <div className="feedback-comment">
+                      “{feedback.comment}”
+                    </div>
+
+                  ) : (
+
+                    <div className="feedback-no-comment">
+                      No written comment provided.
+                    </div>
+
+                  )}
+
+                </div>
+
+              ) : (
+
+                <div className="feedback-empty">
+
+                  <div className="feedback-empty-icon">
+                    ★
+                  </div>
+
+                  <strong>
+                    No feedback yet
+                  </strong>
+
+                  <p>
+                    The reporter has not submitted
+                    a rating or written feedback.
+                  </p>
+
+                </div>
+
+              )}
+
+            </section>
+
+
+            {/* RESOLUTION */}
+
+            <section className="detail-card resolution-card">
+
+              <div className="section-heading">
+
+                <div className="section-icon resolution-section-icon">
+                  ✓
+                </div>
+
+                <div>
+                  <span>RESOLUTION</span>
+
+                  <h2>
+                    Resolution Details
+                  </h2>
+                </div>
+
+              </div>
+
+              {isResolved ? (
+
+                <>
+
+                  <div className="resolved-message">
+
+                    <div className="resolved-check">
+                      ✓
+                    </div>
+
+                    <div>
+
+                      <strong>
+                        Complaint Resolved
+                      </strong>
+
+                      <p>
+                        This complaint has been
+                        successfully resolved by
+                        the administration.
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                  {complaint.resolution_note && (
+
+                    <div className="resolution-note">
+
+                      <small>
+                        RESOLUTION NOTE
+                      </small>
+
+                      <p>
+                        {complaint.resolution_note}
+                      </p>
+
+                    </div>
+
+                  )}
+
+                  {resolutionImage ? (
+
+                    <div className="resolution-image-wrapper">
+
+                      <div className="resolution-image-label">
+                        RESOLUTION PROOF
+                      </div>
+                      <img
+  src={
+    complaint.resolution_image_url
+      ? `http://localhost:5000${complaint.resolution_image_url}`
+      : ""
+  }
+  alt="Resolution proof"
+  className="resolution-proof-image"
+/>
+
+                    </div>
+
+                  ) : (
+
+                    <div className="no-proof-small">
+
+                      <span>📷</span>
+
+                      <div>
+
+                        <strong>
+                          No proof image uploaded
+                        </strong>
+
+                        <p>
+                          No resolution photo is
+                          available for this complaint.
+                        </p>
+
+                      </div>
+
+                    </div>
+
+                  )}
+
+                </>
+
+              ) : (
+
+                <div className="pending-resolution">
+
+                  <span>⏳</span>
 
                   <div>
 
                     <strong>
-                      Complaint Reported
+                      Resolution pending
                     </strong>
 
-                    <span>
-                      Issue submitted by student
-                    </span>
+                    <p>
+                      Resolution details will appear
+                      here after the complaint is
+                      completed.
+                    </p>
 
                   </div>
 
                 </div>
 
+              )}
 
-                <div className="timeline-item active">
+            </section>
 
-                  <div className="timeline-dot">
-                    ✓
-                  </div>
+          </div>
 
-                  <div>
 
-                    <strong>
-                      Under Review
-                    </strong>
+          {/* =================================================
+              ADMIN ACTION - FULL WIDTH
+          ================================================= */}
 
-                    <span>
-                      Administration reviewing complaint
-                    </span>
+          {!isResolved && (
 
-                  </div>
+            <section className="detail-card admin-action-card admin-action-full-width">
 
+              <div className="section-heading">
+
+                <div className="section-icon">
+                  ⚙
                 </div>
 
+                <div>
 
-                <div className="timeline-item current">
+                  <span>
+                    ADMIN ACTION
+                  </span>
 
-                  <div className="timeline-dot">
-                    •
-                  </div>
-
-                  <div>
-
-                    <strong>
-                      Current Status
-                    </strong>
-
-                    <span>
-                      {statusText}
-                    </span>
-
-                  </div>
+                  <h2>
+                    Update Complaint
+                  </h2>
 
                 </div>
 
               </div>
 
+
+              {/* STATUS + NOTE */}
+
+              <div className="admin-form-top-row">
+
+
+                <div className="admin-form-field">
+
+                  <label htmlFor="complaint-status">
+                    Status
+                  </label>
+
+                  <select
+                    id="complaint-status"
+                    value={status}
+                    onChange={(e) =>
+                      setStatus(e.target.value)
+                    }
+                  >
+
+                    <option value="VERIFIED">
+                      Verified
+                    </option>
+
+                    <option value="IN_PROGRESS">
+                      In Progress
+                    </option>
+
+                    <option value="RESOLVED">
+                      Resolved
+                    </option>
+
+                    <option value="REJECTED">
+                      Rejected
+                    </option>
+
+                  </select>
+
+                </div>
+
+
+                {status === "RESOLVED" && (
+
+                  <div className="admin-form-field admin-note-field">
+
+                    <label htmlFor="resolution-note">
+                      Resolution Note
+                    </label>
+
+                    <textarea
+                      id="resolution-note"
+                      value={resolutionNote}
+                      onChange={(e) =>
+                        setResolutionNote(e.target.value)
+                      }
+                      placeholder="Explain how the complaint was resolved..."
+                    />
+
+                  </div>
+
+                )}
+
+              </div>
+
+
+              {/* PROOF + BUTTON */}
+
+              {status === "RESOLVED" && (
+
+                <div className="admin-proof-action-row">
+
+                  <div className="admin-form-field">
+
+                    <label>
+                      Resolution Proof
+                    </label>
+
+                    <label className="admin-upload-box">
+
+                      <input
+                        type="file"
+                        accept=".jpg,.jpeg,.png,.webp"
+                        onChange={(e) =>
+                          setProofImage(
+                            e.target.files?.[0] || null
+                          )
+                        }
+                      />
+
+                      <span className="admin-upload-icon">
+                        ↑
+                      </span>
+
+                      <strong>
+                        {proofImage
+                          ? proofImage.name
+                          : "Upload proof photo"}
+                      </strong>
+
+                      <small>
+                        JPG, PNG or WEBP
+                      </small>
+
+                    </label>
+
+                  </div>
+
+
+                  <div className="admin-action-button-area">
+
+                    <button
+                      type="button"
+                      className="admin-update-button"
+                      onClick={handleUpdate}
+                    >
+                      ✓ Update Complaint
+                    </button>
+
+                  </div>
+
+                </div>
+
+              )}
+
+
+              {/* NON RESOLVED */}
+
+              {status !== "RESOLVED" && (
+
+                <div className="admin-non-resolved-action">
+
+                  <button
+                    type="button"
+                    className="admin-update-button"
+                    onClick={handleUpdate}
+                  >
+                    ✓ Update Complaint
+                  </button>
+
+                </div>
+
+              )}
+
             </section>
 
-          </aside>
+          )}
 
         </div>
 
