@@ -143,7 +143,8 @@ router.post("/login", async (req, res) => {
                 password,
                 role,
                 department_id,
-                year
+                year,
+                admin_type_id
              FROM users
              WHERE email = $1`,
             [email]
