@@ -27,13 +27,14 @@ const CATEGORIES = [
   { id: 7, name: "Other", emoji: "📌" },
 ];
 
-function ReportIssue({ user, onBack, onSuccess }) {
+function ReportIssue({ user, onBack, onSuccess, onIssueClick }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
   const [extraDetail, setExtraDetail] = useState("");
   const [categoryId, setCategoryId] = useState(null);
   const [visibility, setVisibility] = useState("PUBLIC");
+  const [isAnonymous, setIsAnonymous] = useState(false);
 
   const [image, setImage] = useState(null);
   const [video, setVideo] = useState(null);
@@ -46,9 +47,23 @@ function ReportIssue({ user, onBack, onSuccess }) {
   // =========================================================
 
   const [duplicateIssue, setDuplicateIssue] = useState(null);
-  const [aiChecking, setAiChecking] = useState(false);
-  const [aiChecked, setAiChecked] = useState(false);
-  const [forwarding, setForwarding] = useState(false);
+  const [aiChecking, setAiChecking]         = useState(false);
+  const [aiChecked, setAiChecked]           = useState(false);
+  const [forwarding, setForwarding]         = useState(false);
+
+  // ── Post-submit success screen ─────────────────────────────────
+  const [submitted, setSubmitted]           = useState(false);   // show success screen
+  const [submittedIssue, setSubmittedIssue] = useState(null);    // the newly created issue
+  const [similarScanning, setSimilarScanning] = useState(false); // AI scanning after post
+  const [similarAfterPost, setSimilarAfterPost] = useState(null); // { found: bool, issues: [] }
+
+  // ── AI Quality Gate ───────────────────────────────────────
+  const [aiValidation, setAiValidation]     = useState(null);   // { isValid, issues[], suggestion }
+  const [aiValidating, setAiValidating]     = useState(false);
+
+  // ── AI Live Suggestions (student-facing: category + quality only) ─────
+  const [aiCategorySuggestion, setAiCategorySuggestion] = useState(null); // { categoryName, confidence }
+  const [aiSentiment, setAiSentiment]                   = useState(null); // { sentiment, urgencyFlag }
 
   // =========================================================
   // FILE HANDLERS
@@ -214,6 +229,57 @@ function ReportIssue({ user, onBack, onSuccess }) {
   ]);
 
   // =========================================================
+  // AI LIVE SUGGESTIONS (debounced — fires 800ms after typing stops)
+  // =========================================================
+
+  useEffect(() => {
+    const hasEnoughContent = title.trim().length > 10 && description.trim().length > 20;
+    if (!hasEnoughContent) {
+      setAiCategorySuggestion(null);
+      setAiSentiment(null);
+      setAiValidation(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      const body = { title: title.trim(), description: description.trim() };
+
+      // Run in parallel — category + sentiment + quality gate
+      const [catRes, sentRes, valRes] = await Promise.allSettled([
+        fetch("http://localhost:5000/api/ai/category-suggest", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        }).then(r => r.json()).catch(() => null),
+
+        fetch("http://localhost:5000/api/ai/sentiment", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify(body),
+        }).then(r => r.json()).catch(() => null),
+
+        fetch("http://localhost:5000/api/ai/validate", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ ...body, location: location || "" }),
+        }).then(r => r.json()).catch(() => null),
+      ]);
+
+      if (catRes.status === "fulfilled" && catRes.value?.success) {
+        setAiCategorySuggestion(catRes.value);
+      }
+      if (sentRes.status === "fulfilled" && sentRes.value?.success) {
+        setAiSentiment(sentRes.value);
+      }
+      if (valRes.status === "fulfilled" && valRes.value) {
+        setAiValidation(valRes.value);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [title, description, location]);
+
+  // =========================================================
   // FORWARD EXISTING COMPLAINT
   // =========================================================
 
@@ -303,59 +369,60 @@ function ReportIssue({ user, onBack, onSuccess }) {
   // SUBMIT NEW ISSUE
   // =========================================================
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e, forceCreate = false) => {
     e?.preventDefault();
 
-    if (
-      !title.trim() ||
-      !description.trim() ||
-      !location ||
-      !categoryId
-    ) {
-      setError(
-        "Please fill in all required fields."
-      );
+    if (!title.trim()) {
+      setError("Please enter a title for the issue.");
+      document.getElementById("report-title-input")?.focus();
       return;
     }
 
-    if (!user) {
-      setError(
-        "User information is missing. Please login again."
-      );
+    if (!categoryId) {
+      setError("Please select a category for the issue.");
+      document.getElementById("category-section")?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
 
-    // AI check chal raha hai
-    if (aiChecking) {
-      setError(
-        "Please wait while AI checks for similar complaints."
-      );
+    if (!location) {
+      setError("Please select a location for the issue.");
+      document.getElementById("location-select")?.focus();
       return;
     }
 
-    // AI check abhi hua hi nahi
-    if (!aiChecked) {
-      setError(
-        "Please wait for the duplicate check to complete."
-      );
+    if (!description.trim()) {
+      setError("Please enter a description of the problem.");
+      document.getElementById("report-desc-textarea")?.focus();
       return;
     }
 
-    // Duplicate already found
-    if (duplicateIssue) {
-      setError(
-        "A similar complaint already exists. Please use 'Forward Existing'."
-      );
-      return;
-    }
-
-    const userId = user.user_id || user.id;
+    const resolvedUser = user || JSON.parse(localStorage.getItem("campus_civic_user") || "null");
+    const userId = resolvedUser?.user_id || resolvedUser?.id;
 
     if (!userId) {
       setError(
-        "User ID is missing. Please login again."
+        "You must be logged in to submit a complaint. Please log in first."
       );
       return;
+    }
+
+    // If duplicate was found and user hasn't explicitly clicked to post anyway
+    if (duplicateIssue && !forceCreate) {
+      setError(
+        "A similar report already exists. If yours is different, click 'Post Anyway' to submit."
+      );
+      return;
+    }
+
+    // AI quality gate — only block explicit severe spam
+    if (aiValidation && !aiValidation.isValid && !forceCreate) {
+      const blockers = (aiValidation.issues || []).filter(i => ["SPAM","OFFENSIVE"].includes(i));
+      if (blockers.length > 0) {
+        setError(
+          `Your report was flagged: ${blockers.join(", ")}. ${aiValidation.suggestion || "Please revise or click Post Anyway."}`
+        );
+        return;
+      }
     }
 
     setLoading(true);
@@ -402,7 +469,12 @@ function ReportIssue({ user, onBack, onSuccess }) {
 
       formData.append(
         "force_create",
-        "false"
+        forceCreate ? "true" : "false"
+      );
+
+      formData.append(
+        "is_anonymous",
+        isAnonymous ? "true" : "false"
       );
 
       // =====================================================
@@ -463,7 +535,7 @@ function ReportIssue({ user, onBack, onSuccess }) {
         setAiChecked(true);
 
         setError(
-          "A similar complaint was found. You can forward the existing complaint."
+          "A similar complaint was found. You can view it below or click 'Post Anyway' to submit."
         );
 
         return;
@@ -481,19 +553,19 @@ function ReportIssue({ user, onBack, onSuccess }) {
       }
 
       // =====================================================
-      // SUCCESS
+      // SUCCESS — issue saved, show banner immediately
       // =====================================================
 
-      console.log(
-        "[ISSUE] Issue created successfully:",
-        data.issue
-      );
+      const newIssue = data.issue || {};
 
-      alert(
-        "Issue submitted successfully!"
-      );
+      setSubmittedIssue(newIssue);
+      setSubmitted(true);
 
-      onSuccess?.();
+      // No blocking scan here — the backend runs AI in the background
+      // and will push a notification to the user's Alerts tab if it
+      // finds a similar existing report.
+      setSimilarAfterPost(null);
+      setSimilarScanning(false);
 
     } catch (err) {
       console.error(
@@ -555,6 +627,114 @@ function ReportIssue({ user, onBack, onSuccess }) {
       >
 
         {/* =================================================
+            SUCCESS SCREEN — shown after post
+        ================================================= */}
+        {submitted && (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "80vh",
+            gap: "20px",
+            padding: "24px",
+            textAlign: "center",
+          }}>
+
+            {/* Big checkmark */}
+            <div style={{
+              width: "72px", height: "72px",
+              borderRadius: "50%",
+              background: "rgba(16,185,129,0.12)",
+              border: "2px solid rgba(16,185,129,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "32px",
+            }}>
+              ✅
+            </div>
+
+            <div>
+              <div style={{ fontSize: "20px", fontWeight: "800", color: "#f8fafc", marginBottom: "6px" }}>
+                Report Posted!
+              </div>
+              {submittedIssue?.title && (
+                <div style={{ fontSize: "13px", color: "#9ca3af", maxWidth: "280px" }}>
+                  "{submittedIssue.title}"
+                </div>
+              )}
+            </div>
+
+            {/* Similar-report notice — always shown, clean and instant */}
+            <div style={{
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: "14px",
+              background: "rgba(99,102,241,0.06)",
+              border: "1px solid rgba(99,102,241,0.18)",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "12px",
+            }}>
+              <span style={{ fontSize: "20px", flexShrink: 0 }}>🔔</span>
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: "13px", fontWeight: "600", color: "#a5b4fc", marginBottom: "4px" }}>
+                  Checking for similar reports…
+                </div>
+                <div style={{ fontSize: "12px", color: "#64748b", lineHeight: 1.5 }}>
+                  If we find one, we'll notify you in your{" "}
+                  <span style={{ color: "#818cf8", fontWeight: 600 }}>Alerts</span> tab.
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: "flex", gap: "10px", width: "100%" }}>
+              <button
+                type="button"
+                onClick={() => onSuccess?.()}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  borderRadius: "11px",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "rgba(255,255,255,0.05)",
+                  color: "#9ca3af",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  cursor: "pointer",
+                }}
+              >
+                Go to Feed
+              </button>
+              {submittedIssue?.issue_id && onIssueClick && (
+                <button
+                  type="button"
+                  onClick={() => onIssueClick(submittedIssue)}
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    borderRadius: "11px",
+                    border: "none",
+                    background: "#7661f5",
+                    color: "#fff",
+                    fontSize: "14px",
+                    fontWeight: "700",
+                    cursor: "pointer",
+                  }}
+                >
+                  View My Report
+                </button>
+              )}
+            </div>
+
+          </div>
+        )}
+
+        {/* Main form — hidden after submit */}
+        {!submitted && (
+        <>
+
+        {/* =================================================
             HEADER
         ================================================= */}
 
@@ -598,76 +778,39 @@ function ReportIssue({ user, onBack, onSuccess }) {
           </h1>
 
           {/* =================================================
-              POST / FORWARD BUTTON
+              POST BUTTON
           ================================================= */}
 
-          {duplicateIssue ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
 
-            <button
-              type="button"
-              onClick={handleForwardExisting}
-              disabled={forwarding}
-              style={{
-                border: "none",
-                borderRadius: "11px",
-                padding: "10px 16px",
-                background: "#22c55e",
-                color: "#fff",
-                fontSize: "14px",
-                fontWeight: 700,
-                cursor: forwarding
-                  ? "not-allowed"
-                  : "pointer",
-                opacity: forwarding
-                  ? 0.65
-                  : 1,
-              }}
-            >
-              {forwarding
-                ? "..."
-                : "Forward Existing"}
-            </button>
-
-          ) : (
+            {/* Subtle AI checking indicator next to button */}
+            {aiChecking && (
+              <span style={{ fontSize: "11px", color: "#6366f1", whiteSpace: "nowrap" }}>
+                ⏳ checking…
+              </span>
+            )}
 
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={
-                loading ||
-                aiChecking ||
-                !aiChecked
-              }
+              disabled={loading}
               style={{
                 border: "none",
                 borderRadius: "11px",
-                padding: "10px 22px",
-                background: "#7661f5",
+                padding: "10px 24px",
+                background: loading ? "rgba(118,97,245,0.5)" : "#7661f5",
                 color: "#fff",
                 fontSize: "15px",
                 fontWeight: 700,
-                cursor:
-                  loading ||
-                  aiChecking ||
-                  !aiChecked
-                    ? "not-allowed"
-                    : "pointer",
-                opacity:
-                  loading ||
-                  aiChecking ||
-                  !aiChecked
-                    ? 0.65
-                    : 1,
+                cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.7 : 1,
+                transition: "all 0.2s",
               }}
             >
-              {loading
-                ? "..."
-                : aiChecking
-                ? "Checking..."
-                : "Post"}
+              {loading ? "Posting…" : "Post Report"}
             </button>
 
-          )}
+          </div>
 
         </div>
 
@@ -691,139 +834,20 @@ function ReportIssue({ user, onBack, onSuccess }) {
           </div>
         )}
 
-        {/* =================================================
-            DUPLICATE RESULT
-        ================================================= */}
-
-        {duplicateIssue && (
-          <div
-            style={{
-              marginBottom: "20px",
-              padding: "15px",
-              borderRadius: "12px",
-              background: "#18251c",
-              border: "1px solid #2f6b3d",
-              color: "#d1fae5",
-            }}
-          >
-
-            <div
-              style={{
-                fontSize: "15px",
-                fontWeight: 700,
-                marginBottom: "8px",
-              }}
-            >
-              ⚠️ Similar complaint already exists
-            </div>
-
-            <div
-              style={{
-                fontSize: "13px",
-                color: "#a7f3d0",
-                marginBottom: "10px",
-              }}
-            >
-              Instead of creating a duplicate complaint,
-              you can forward/support the existing one.
-            </div>
-
-            <div
-              style={{
-                padding: "10px",
-                borderRadius: "9px",
-                background: "#101914",
-                marginBottom: "8px",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: "#86efac",
-                  marginBottom: "4px",
-                }}
-              >
-                Existing Complaint
-              </div>
-
-              <div
-                style={{
-                  fontSize: "14px",
-                  fontWeight: 700,
-                  color: "#f8fafc",
-                }}
-              >
-                {duplicateIssue.title ||
-                  "Similar complaint"}
-              </div>
-            </div>
-
-            <div
-              style={{
-                fontSize: "12px",
-                color: "#9ca3af",
-              }}
-            >
-              📍 {duplicateIssue.location}
-            </div>
-
-            {duplicateIssue.issue_id && (
-              <div
-                style={{
-                  marginTop: "4px",
-                  fontSize: "12px",
-                  color: "#9ca3af",
-                }}
-              >
-                Issue ID: #{duplicateIssue.issue_id}
-              </div>
-            )}
-
+        {/* Quality gate warning — shown near top only if content is problematic */}
+        {aiValidation && !aiValidation.isValid && aiValidation.suggestion && (
+          <div style={{
+            marginBottom: "14px",
+            padding: "10px 13px",
+            borderRadius: "10px",
+            background: "rgba(245,158,11,0.08)",
+            border: "1px solid rgba(245,158,11,0.3)",
+            fontSize: "13px",
+            color: "#fcd34d",
+          }}>
+            💡 {aiValidation.suggestion}
           </div>
         )}
-
-        {/* =================================================
-            AI CHECK STATUS
-        ================================================= */}
-
-        {!duplicateIssue &&
-          aiChecking && (
-            <div
-              style={{
-                marginBottom: "18px",
-                padding: "10px 13px",
-                borderRadius: "10px",
-                background: "#17152a",
-                border: "1px solid #302b55",
-                color: "#c4b5fd",
-                fontSize: "12px",
-              }}
-            >
-              🤖 AI is checking for similar complaints...
-            </div>
-          )}
-
-        {!duplicateIssue &&
-          aiChecked &&
-          !aiChecking &&
-          title.trim() &&
-          description.trim() &&
-          location &&
-          categoryId && (
-            <div
-              style={{
-                marginBottom: "18px",
-                padding: "10px 13px",
-                borderRadius: "10px",
-                background: "#122019",
-                border: "1px solid #245333",
-                color: "#86efac",
-                fontSize: "12px",
-              }}
-            >
-              ✓ No similar complaint found. You can post this issue.
-            </div>
-          )}
 
         <form onSubmit={handleSubmit}>
 
@@ -934,6 +958,60 @@ function ReportIssue({ user, onBack, onSuccess }) {
           </div>
 
           {/* =================================================
+              ANONYMOUS REPORTING
+          ================================================= */}
+
+          <div style={{ marginBottom: "24px" }}>
+
+            <div
+              onClick={() => setIsAnonymous(a => !a)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: isAnonymous ? "rgba(99,102,241,0.12)" : "#15151e",
+                border: `1px solid ${isAnonymous ? "#6366f1" : "#2a2a36"}`,
+                borderRadius: "12px",
+                padding: "14px 16px",
+                cursor: "pointer",
+                transition: "all 0.2s",
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, color: isAnonymous ? "#818cf8" : "#9ca3af", fontSize: "14px", marginBottom: "2px" }}>
+                  🕵️ Post Anonymously
+                </div>
+                <div style={{ fontSize: "12px", color: "#555" }}>
+                  {isAnonymous
+                    ? "Your name will be hidden — shown as \"Anonymous\""
+                    : "Your name will be shown with this issue"}
+                </div>
+              </div>
+
+              {/* Toggle */}
+              <div style={{
+                width: "42px", height: "24px",
+                borderRadius: "12px",
+                background: isAnonymous ? "#6366f1" : "#2a2a36",
+                position: "relative",
+                transition: "background 0.2s",
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  position: "absolute",
+                  top: "3px",
+                  left: isAnonymous ? "21px" : "3px",
+                  width: "18px", height: "18px",
+                  borderRadius: "50%",
+                  background: "#fff",
+                  transition: "left 0.2s",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.4)",
+                }} />
+              </div>
+            </div>
+          </div>
+
+          {/* =================================================
               CATEGORY
           ================================================= */}
 
@@ -956,6 +1034,7 @@ function ReportIssue({ user, onBack, onSuccess }) {
             </label>
 
             <div
+              id="category-section"
               style={{
                 display: "grid",
                 gridTemplateColumns:
@@ -1051,6 +1130,7 @@ function ReportIssue({ user, onBack, onSuccess }) {
             </label>
 
             <input
+              id="report-title-input"
               type="text"
               value={title}
               onChange={(e) => {
@@ -1099,6 +1179,7 @@ function ReportIssue({ user, onBack, onSuccess }) {
             </label>
 
             <textarea
+              id="report-desc-textarea"
               value={description}
               onChange={(e) => {
                 setDescription(
@@ -1126,6 +1207,91 @@ function ReportIssue({ user, onBack, onSuccess }) {
               }}
             />
 
+            {/* ── AI checking micro-state ───────────────────────────── */}
+            {aiChecking && (
+              <div style={{
+                marginTop: "10px",
+                display: "flex", alignItems: "center", gap: "7px",
+                fontSize: "12px", color: "#6366f1",
+              }}>
+                <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span>
+                Checking for similar reports…
+              </div>
+            )}
+
+            {/* ── Similar report found ──────────────────────────────── */}
+            {duplicateIssue && (
+              <div style={{
+                marginTop: "10px",
+                padding: "12px 14px",
+                borderRadius: "12px",
+                background: "rgba(16,185,129,0.06)",
+                border: "1px solid rgba(16,185,129,0.25)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "10px",
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "11px", color: "#10b981", fontWeight: "700", marginBottom: "4px", letterSpacing: "0.4px" }}>
+                    🔗 SIMILAR REPORT EXISTS
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#d1fae5", fontWeight: "600", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {duplicateIssue.title || "Similar complaint"}
+                  </div>
+                  {duplicateIssue.location && (
+                    <div style={{ fontSize: "11px", color: "#6ee7b7", marginTop: "2px" }}>
+                      📍 {duplicateIssue.location}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "8px", flexShrink: 0, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Navigate to existing issue — use onIssueClick prop if available
+                      if (onIssueClick && duplicateIssue.issue_id) {
+                        onIssueClick(duplicateIssue);
+                      }
+                    }}
+                    style={{
+                      flexShrink: 0,
+                      padding: "7px 14px",
+                      borderRadius: "9px",
+                      background: "rgba(16,185,129,0.15)",
+                      border: "1px solid rgba(16,185,129,0.4)",
+                      color: "#34d399",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    View Report →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleSubmit(e, true)}
+                    disabled={loading}
+                    style={{
+                      flexShrink: 0,
+                      padding: "7px 14px",
+                      borderRadius: "9px",
+                      background: "rgba(99,102,241,0.2)",
+                      border: "1px solid rgba(99,102,241,0.5)",
+                      color: "#818cf8",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      cursor: loading ? "not-allowed" : "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Post Anyway
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* =================================================
@@ -1151,6 +1317,7 @@ function ReportIssue({ user, onBack, onSuccess }) {
             </label>
 
             <select
+              id="location-select"
               value={location}
               onChange={(e) => {
                 setLocation(e.target.value);
@@ -1362,20 +1529,108 @@ function ReportIssue({ user, onBack, onSuccess }) {
           </div>
 
           {/* =================================================
-              HIDDEN SUBMIT
+              SUBMIT & ACTIONS (BOTTOM OF FORM)
           ================================================= */}
 
-          <button
-            type="submit"
-            disabled={loading}
+          {error && (
+            <div
+              style={{
+                marginTop: "16px",
+                marginBottom: "16px",
+                padding: "13px 16px",
+                borderRadius: "11px",
+                background: "rgba(239,68,68,0.12)",
+                border: "1px solid rgba(239,68,68,0.35)",
+                color: "#fca5a5",
+                fontSize: "14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>⚠️</span>
+              <span style={{ flex: 1 }}>{error}</span>
+              {duplicateIssue && (
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e, true)}
+                  disabled={loading}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: "8px",
+                    background: "#6366f1",
+                    border: "none",
+                    color: "#fff",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Post Anyway
+                </button>
+              )}
+            </div>
+          )}
+
+          <div
             style={{
-              display: "none",
+              marginTop: "24px",
+              paddingTop: "20px",
+              borderTop: "1px solid #1a1a24",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: "12px",
             }}
           >
-            Submit
-          </button>
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                style={{
+                  padding: "12px 24px",
+                  borderRadius: "11px",
+                  border: "1px solid #252532",
+                  background: "#161622",
+                  color: "#9ca3af",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                padding: "12px 32px",
+                borderRadius: "11px",
+                border: "none",
+                background: loading
+                  ? "rgba(118,97,245,0.5)"
+                  : "linear-gradient(135deg, #7661f5 0%, #6366f1 100%)",
+                color: "#fff",
+                fontSize: "15px",
+                fontWeight: 700,
+                cursor: loading ? "not-allowed" : "pointer",
+                boxShadow: "0 4px 16px rgba(118,97,245,0.35)",
+              }}
+            >
+              {loading ? "Posting…" : "🚀 Post Report"}
+            </button>
+          </div>
 
         </form>
+
+        </> /* end !submitted Fragment */
+        )} {/* end !submitted */}
+
       </div>
     </div>
   );

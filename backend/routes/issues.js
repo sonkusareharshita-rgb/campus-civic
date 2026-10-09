@@ -7,7 +7,14 @@ const fs = require("fs");
 
 const router = express.Router();
 
-console.log("ISSUES ROUTER FILE LOADED");
+const rateLimit = require("express-rate-limit");
+const createIssueLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: { message: "Too many issues created from this IP, please try again after an hour." },
+    standardHeaders: true,
+    legacyHeaders: false,
+});console.log("ISSUES ROUTER FILE LOADED");
 
 // =====================================================
 // FILE UPLOAD CONFIGURATION
@@ -88,6 +95,7 @@ router.get("/test", (req, res) => {
 
 router.post(
     "/",
+    createIssueLimiter,
     upload.fields([
         {
             name: "image",
@@ -113,7 +121,8 @@ router.post(
                 location,
                 priority,
                 force_create,
-                visibility
+                visibility,
+                is_anonymous
             } = req.body || {};
 
             const imageFile =
@@ -155,275 +164,13 @@ router.post(
             }
 
             // -------------------------------------------------
-            // DUPLICATE COMPLAINT CHECK
+            // NO SYNCHRONOUS DUPLICATE CHECK HERE
+            // (moved to background after response is sent)
             // -------------------------------------------------
 
-            if (force_create !== "true") {
-
-                const openResult =
-                    await pool.query(
-                        `
-                        SELECT
-                            i.issue_id,
-                            i.title,
-                            i.description,
-                            i.location,
-                            i.status,
-                            i.priority,
-                            i.created_at,
-                            c.category_name
-
-                        FROM issues i
-
-                        JOIN categories c
-                            ON i.category_id = c.category_id
-
-                        WHERE i.status IN
-                        (
-                            'SUBMITTED',
-                            'VERIFIED',
-                            'ASSIGNED',
-                            'IN_PROGRESS'
-                        )
-
-                        ORDER BY i.created_at DESC
-
-                        LIMIT 50
-                        `
-                    );
-
-                let duplicateInfo = null;
-
-                // -------------------------------------------------
-                // AI DUPLICATE DETECTION
-                // -------------------------------------------------
-
-                if (
-                    ai.isEnabled() &&
-                    openResult.rows.length > 0
-                ) {
-
-                    duplicateInfo =
-                        await ai.detectDuplicate(
-                            {
-                                title,
-                                description,
-                                location
-                            },
-                            openResult.rows
-                        );
-
-                }
-
-                // -------------------------------------------------
-                // SQL FALLBACK DUPLICATE CHECK
-                // -------------------------------------------------
-
-                if (
-                    !duplicateInfo ||
-                    !duplicateInfo.isDuplicate ||
-                    duplicateInfo.aiError
-                ) {
-
-                    const sqlDup =
-                        await pool.query(
-                            `
-                            SELECT
-                                i.issue_id,
-                                i.title,
-                                i.description,
-                                i.location,
-                                i.status,
-                                i.priority,
-                                i.created_at,
-                                c.category_name
-
-                            FROM issues i
-
-                            JOIN categories c
-                                ON i.category_id = c.category_id
-
-                            WHERE i.category_id = $1
-
-                            AND LOWER(TRIM(i.location))
-                                = LOWER(TRIM($2))
-
-                            AND i.status IN
-                            (
-                                'SUBMITTED',
-                                'VERIFIED',
-                                'ASSIGNED',
-                                'IN_PROGRESS'
-                            )
-
-                            AND
-                            (
-                                LOWER(i.title)
-                                    LIKE '%' || LOWER($3) || '%'
-
-                                OR
-
-                                LOWER($3)
-                                    LIKE '%' || LOWER(i.title) || '%'
-                            )
-
-                            ORDER BY i.created_at DESC
-
-                            LIMIT 1
-                            `,
-                            [
-                                category_id,
-                                location,
-                                title
-                            ]
-                        );
-
-                    if (sqlDup.rows.length > 0) {
-
-                        duplicateInfo = {
-
-                            isDuplicate: true,
-
-                            matchedIssueId:
-                                sqlDup.rows[0].issue_id,
-
-                            confidence: "HIGH"
-
-                        };
-
-                    }
-
-                }
-
-                // -------------------------------------------------
-                // RETURN DUPLICATE
-                // -------------------------------------------------
-
-                if (
-                    duplicateInfo &&
-                    duplicateInfo.isDuplicate
-                ) {
-
-                    let matchRow =
-                        openResult.rows.find(
-                            (r) =>
-                                String(r.issue_id) ===
-                                String(
-                                    duplicateInfo.matchedIssueId
-                                )
-                        );
-
-                    if (
-                        !matchRow &&
-                        duplicateInfo.matchedIssueId
-                    ) {
-
-                        const matchedResult =
-                            await pool.query(
-                                `
-                                SELECT
-                                    i.issue_id,
-                                    i.title,
-                                    i.description,
-                                    i.location,
-                                    i.status,
-                                    i.priority,
-                                    i.created_at,
-                                    c.category_name
-
-                                FROM issues i
-
-                                JOIN categories c
-                                    ON i.category_id =
-                                       c.category_id
-
-                                WHERE i.issue_id = $1
-                                `,
-                                [
-                                    duplicateInfo.matchedIssueId
-                                ]
-                            );
-
-                        if (
-                            matchedResult.rows.length > 0
-                        ) {
-
-                            matchRow =
-                                matchedResult.rows[0];
-
-                        }
-
-                    }
-
-                    return res.status(409).json({
-
-                        duplicate: true,
-
-                        message:
-                            "A similar complaint already exists.",
-
-                        ai_confidence:
-                            duplicateInfo.confidence ||
-                            null,
-
-                        existing_issue:
-                            matchRow || {
-                                issue_id:
-                                    duplicateInfo.matchedIssueId
-                            }
-
-                    });
-
-                }
-
-            }
-
-            // -------------------------------------------------
-            // AI AUTO PRIORITY
-            // -------------------------------------------------
-
-            let finalPriority =
-                priority || "MEDIUM";
-
-            if (
-                !priority &&
-                ai.isEnabled()
-            ) {
-
-                finalPriority =
-                    await ai.scorePriority(
-                        title,
-                        description,
-                        null
-                    );
-
-                console.log(
-                    "[AI] Auto-priority:",
-                    finalPriority
-                );
-
-            }
-
-            // -------------------------------------------------
-            // AI CATEGORY SUGGESTION
-            // -------------------------------------------------
-
-            let aiCategory = null;
-
-            if (ai.isEnabled()) {
-
-                aiCategory =
-                    await ai.detectCategory(
-                        title,
-                        description
-                    );
-
-                console.log(
-                    "[AI] Suggested category:",
-                    aiCategory
-                );
-
-            }
+            // Use the priority the user selected; default to MEDIUM.
+            // AI priority scoring runs in the background after save.
+            const finalPriority = priority || "MEDIUM";
 
             // -------------------------------------------------
             // CREATE ISSUE
@@ -443,7 +190,8 @@ router.post(
                         image_url,
                         video_url,
                         priority,
-                        visibility
+                        visibility,
+                        is_anonymous
                     )
 
                     VALUES
@@ -457,7 +205,8 @@ router.post(
                         $7,
                         $8,
                         $9,
-                        $10
+                        $10,
+                        $11
                     )
 
                     RETURNING *
@@ -472,7 +221,8 @@ router.post(
                         image_url,
                         video_url,
                         finalPriority,
-                        visibility || "PUBLIC"
+                        visibility || "PUBLIC",
+                        is_anonymous === "true" || is_anonymous === true
                     ]
                 );
 
@@ -553,32 +303,107 @@ router.post(
 
             }
 
-            return res.status(201).json({
+            // ── SOCKET: broadcast new issue to all clients ──
+            const io = req.app.io;
+            if (io) {
+                io.emit("issue:new", {
+                    issue_id:  newIssue.issue_id,
+                    title:     newIssue.title,
+                    location:  newIssue.location,
+                    priority:  newIssue.priority,
+                    status:    newIssue.status,
+                    created_at: newIssue.created_at,
+                });
+            }
 
-                duplicate: false,
-
-                message:
-                    "Issue created successfully",
-
-                issue:
-                    newIssue,
-
-                ai: {
-
-                    priority_auto:
-                        !priority
-                            ? finalPriority
-                            : null,
-
-                    suggested_category:
-                        aiCategory,
-
-                    ai_enabled:
-                        ai.isEnabled()
-
-                }
-
+            // ── Respond immediately — user is NOT waiting for AI ──
+            res.status(201).json({
+                duplicate:              false,
+                message:                "Issue created successfully",
+                issue:                  newIssue,
+                similar_check_pending:  true,   // let frontend show the "we'll check" banner
             });
+
+            // -------------------------------------------------
+            // BACKGROUND JOB — runs AFTER the response is sent
+            // Never blocks the user.
+            // -------------------------------------------------
+            setImmediate(async () => {
+                try {
+                    console.log(`[BG] Starting background AI checks for issue #${newIssue.issue_id}`);
+
+                    // ── 1. AI Priority scoring ───────────────
+                    if (!priority && ai.isEnabled()) {
+                        try {
+                            const aiPriority = await ai.scorePriority(title, description, null);
+                            if (["LOW","MEDIUM","HIGH","CRITICAL"].includes(aiPriority)) {
+                                await pool.query(
+                                    `UPDATE issues SET priority = $1 WHERE issue_id = $2`,
+                                    [aiPriority, newIssue.issue_id]
+                                );
+                                console.log(`[BG] Priority set to ${aiPriority} for issue #${newIssue.issue_id}`);
+                            }
+                        } catch (e) {
+                            console.warn("[BG] Priority scoring failed:", e.message);
+                        }
+                    }
+
+                    // ── 2. Semantic duplicate / similar-issue check ─
+                    if (ai.isEnabled()) {
+                        try {
+                            // Fetch recent open issues (exclude the one we just created)
+                            const { rows: candidates } = await pool.query(
+                                `SELECT i.issue_id, i.title, i.description, i.location, i.status,
+                                        i.priority, i.created_at, c.category_name
+                                 FROM issues i
+                                 JOIN categories c ON c.category_id = i.category_id
+                                 WHERE i.status IN ('SUBMITTED','VERIFIED','ASSIGNED','IN_PROGRESS')
+                                   AND i.issue_id != $1
+                                 ORDER BY i.created_at DESC
+                                 LIMIT 60`,
+                                [newIssue.issue_id]
+                            );
+
+                            if (candidates.length > 0) {
+                                const dup = await ai.detectDuplicate(
+                                    { title, description, location },
+                                    candidates
+                                );
+
+                                if (dup && dup.isDuplicate && dup.matchedIssueId) {
+                                    // Insert a notification for the reporter
+                                    const matched = candidates.find(
+                                        c => String(c.issue_id) === String(dup.matchedIssueId)
+                                    );
+                                    const matchTitle = matched?.title || `#${dup.matchedIssueId}`;
+
+                                    await pool.query(
+                                        `INSERT INTO notifications (user_id, issue_id, message)
+                                         VALUES ($1, $2, $3)`,
+                                        [
+                                            reported_by,
+                                            newIssue.issue_id,
+                                            `We found a similar existing report: "${matchTitle}". Consider supporting it instead of creating a duplicate.`,
+                                        ]
+                                    );
+                                    console.log(`[BG] Similar issue #${dup.matchedIssueId} found — notification sent to user ${reported_by}`);
+                                } else {
+                                    console.log(`[BG] No similar issue found for #${newIssue.issue_id}`);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn("[BG] Similar-issue check failed:", e.message);
+                        }
+                    }
+
+                } catch (bgErr) {
+                    console.error("[BG] Background job error:", bgErr.message);
+                }
+            });
+
+            // return is not needed after res.status(201).json() above,
+            // but keep it to exit the synchronous handler cleanly.
+            return;
 
         } catch (error) {
 
@@ -674,7 +499,7 @@ router.post(
 
                     ORDER BY i.created_at DESC
 
-                    LIMIT 500
+                    LIMIT 50
                     `
                 );
 
@@ -1072,6 +897,15 @@ router.post(
                     ]
                 );
 
+            // ── SOCKET: broadcast upvote count update ──
+            const io = req.app.io;
+            if (io) {
+                io.emit("issue:upvote", {
+                    issue_id:     issueId,
+                    report_count: Number(countResult.rows[0].report_count),
+                });
+            }
+
             return res.status(200).json({
 
                 message:
@@ -1155,8 +989,19 @@ router.get(
                         i.resolution_image_url,
                         i.resolved_at,
 
-                        u.name AS reported_by_name,
-                        u.email AS reported_by_email,
+                        i.is_anonymous,
+
+                        CASE
+                            WHEN i.is_anonymous = true
+                            THEN 'Anonymous'
+                            ELSE u.name
+                        END AS reported_by_name,
+
+                        CASE
+                            WHEN i.is_anonymous = true
+                            THEN NULL
+                            ELSE u.email
+                        END AS reported_by_email,
 
                         c.category_name,
 
@@ -1266,6 +1111,432 @@ router.get(
 
     }
 );
+
+
+// =====================================================
+// TRENDING ISSUES (by upvote velocity)
+// GET /api/issues/trending
+// =====================================================
+
+router.get(
+    "/trending",
+    async (req, res) => {
+
+        try {
+
+            const result =
+                await pool.query(
+                    `
+                    SELECT
+                        i.issue_id,
+                        i.title,
+                        i.description,
+                        i.location,
+                        i.status,
+                        i.priority,
+                        i.created_at,
+                        i.is_anonymous,
+
+                        CASE
+                            WHEN i.is_anonymous = true
+                            THEN 'Anonymous'
+                            ELSE u.name
+                        END AS reported_by_name,
+
+                        c.category_name,
+                        i.image_url,
+
+                        COUNT(s.user_id) AS support_count,
+
+                        -- Velocity: supports per hour since creation
+                        CASE
+                            WHEN EXTRACT(EPOCH FROM (NOW() - i.created_at)) / 3600.0 < 1
+                            THEN COUNT(s.user_id)::FLOAT
+                            ELSE COUNT(s.user_id)::FLOAT /
+                                 (EXTRACT(EPOCH FROM (NOW() - i.created_at)) / 3600.0)
+                        END AS velocity
+
+                    FROM issues i
+
+                    JOIN users u
+                        ON i.reported_by = u.user_id
+
+                    JOIN categories c
+                        ON i.category_id = c.category_id
+
+                    LEFT JOIN issue_supporters s
+                        ON i.issue_id = s.issue_id
+
+                    WHERE i.status NOT IN ('RESOLVED', 'CLOSED', 'REJECTED')
+
+                    GROUP BY
+                        i.issue_id,
+                        u.name,
+                        c.category_name
+
+                    ORDER BY
+                        velocity DESC,
+                        support_count DESC
+
+                    LIMIT 20
+                    `
+                );
+
+            return res.status(200).json({
+                success: true,
+                issues: result.rows
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Trending issues error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "Failed to fetch trending issues",
+                error: error.message
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// LEADERBOARD
+// GET /api/issues/leaderboard
+// =====================================================
+
+router.get(
+    "/leaderboard",
+    async (req, res) => {
+
+        try {
+
+            // Top reporters — most issues reported
+            const topReporters =
+                await pool.query(
+                    `
+                    SELECT
+                        u.user_id,
+                        u.name,
+                        u.role,
+                        d.department_name,
+
+                        COUNT(i.issue_id) AS issues_reported,
+
+                        COUNT(
+                            CASE WHEN i.status = 'RESOLVED'
+                            THEN 1 END
+                        ) AS issues_resolved
+
+                    FROM users u
+
+                    JOIN issues i
+                        ON u.user_id = i.reported_by
+
+                    LEFT JOIN departments d
+                        ON u.department_id = d.department_id
+
+                    WHERE u.role IN ('STUDENT', 'FACULTY')
+
+                    GROUP BY
+                        u.user_id,
+                        u.name,
+                        u.role,
+                        d.department_name
+
+                    ORDER BY
+                        issues_reported DESC
+
+                    LIMIT 10
+                    `
+                );
+
+            // Top departments — fastest resolution
+            const topDepartments =
+                await pool.query(
+                    `
+                    SELECT
+                        c.category_name AS department,
+
+                        COUNT(i.issue_id) AS total_issues,
+
+                        COUNT(
+                            CASE WHEN i.status = 'RESOLVED'
+                            THEN 1 END
+                        ) AS resolved_count,
+
+                        ROUND(
+                            AVG(
+                                CASE WHEN i.resolved_at IS NOT NULL
+                                THEN EXTRACT(
+                                    EPOCH FROM (i.resolved_at - i.created_at)
+                                ) / 3600.0
+                                END
+                            )::NUMERIC, 1
+                        ) AS avg_resolution_hours
+
+                    FROM issues i
+
+                    JOIN categories c
+                        ON i.category_id = c.category_id
+
+                    GROUP BY
+                        c.category_name
+
+                    ORDER BY
+                        resolved_count DESC,
+                        total_issues DESC
+                    `
+                );
+
+            // Top supporters — most upvotes given
+            const topSupporters =
+                await pool.query(
+                    `
+                    SELECT
+                        u.user_id,
+                        u.name,
+                        u.role,
+
+                        COUNT(s.support_id) AS supports_given
+
+                    FROM users u
+
+                    JOIN issue_supporters s
+                        ON u.user_id = s.user_id
+
+                    WHERE u.role IN ('STUDENT', 'FACULTY')
+
+                    GROUP BY
+                        u.user_id,
+                        u.name,
+                        u.role
+
+                    ORDER BY
+                        supports_given DESC
+
+                    LIMIT 10
+                    `
+                );
+
+            return res.status(200).json({
+
+                success: true,
+
+                top_reporters:
+                    topReporters.rows,
+
+                top_departments:
+                    topDepartments.rows,
+
+                top_supporters:
+                    topSupporters.rows
+
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Leaderboard error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "Failed to fetch leaderboard",
+                error: error.message
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// CAMPUS HEAT MAP DATA
+// GET /api/issues/heatmap
+// =====================================================
+
+router.get(
+    "/heatmap",
+    async (req, res) => {
+
+        try {
+
+            const result =
+                await pool.query(
+                    `
+                    SELECT
+                        location,
+
+                        COUNT(*) AS issue_count,
+
+                        COUNT(
+                            CASE WHEN status IN ('SUBMITTED', 'VERIFIED', 'ASSIGNED', 'IN_PROGRESS')
+                            THEN 1 END
+                        ) AS open_count,
+
+                        COUNT(
+                            CASE WHEN status = 'RESOLVED'
+                            THEN 1 END
+                        ) AS resolved_count,
+
+                        COUNT(
+                            CASE WHEN priority = 'CRITICAL'
+                            THEN 1 END
+                        ) AS critical_count,
+
+                        COUNT(
+                            CASE WHEN priority = 'HIGH'
+                            THEN 1 END
+                        ) AS high_count,
+
+                        MAX(created_at) AS latest_issue_at
+
+                    FROM issues
+
+                    GROUP BY location
+
+                    ORDER BY
+                        open_count DESC,
+                        issue_count DESC
+                    `
+                );
+
+            return res.status(200).json({
+                success: true,
+                locations: result.rows
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Heatmap error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "Failed to fetch heatmap data",
+                error: error.message
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// ANALYTICS — GET /api/issues/analytics
+// =====================================================
+
+router.get("/analytics", async (req, res) => {
+    try {
+
+        const timelineResult = await pool.query(`
+            SELECT
+                DATE(created_at) AS day,
+                COUNT(*)::int    AS count
+            FROM issues
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY DATE(created_at)
+            ORDER BY day ASC
+        `);
+
+        const categoryResult = await pool.query(`
+            SELECT
+                c.category_name,
+                COUNT(i.issue_id)::int AS count
+            FROM categories c
+            LEFT JOIN issues i ON i.category_id = c.category_id
+            GROUP BY c.category_name
+            ORDER BY count DESC
+        `);
+
+        const priorityResult = await pool.query(`
+            SELECT
+                priority,
+                COUNT(*)::int AS count
+            FROM issues
+            GROUP BY priority
+            ORDER BY
+                CASE priority
+                    WHEN 'CRITICAL' THEN 1
+                    WHEN 'HIGH'     THEN 2
+                    WHEN 'MEDIUM'   THEN 3
+                    WHEN 'LOW'      THEN 4
+                    ELSE 5
+                END
+        `);
+
+        const statusResult = await pool.query(`
+            SELECT
+                status,
+                COUNT(*)::int AS count
+            FROM issues
+            GROUP BY status
+            ORDER BY
+                CASE status
+                    WHEN 'PENDING'     THEN 1
+                    WHEN 'VERIFIED'    THEN 2
+                    WHEN 'IN_PROGRESS' THEN 3
+                    WHEN 'RESOLVED'    THEN 4
+                    WHEN 'CLOSED'      THEN 5
+                    WHEN 'REJECTED'    THEN 6
+                    ELSE 7
+                END
+        `);
+
+        const resolutionResult = await pool.query(`
+            SELECT
+                c.category_name,
+                ROUND(
+                    AVG(
+                        EXTRACT(EPOCH FROM (i.resolved_at - i.created_at)) / 3600
+                    )::numeric, 1
+                ) AS avg_hours
+            FROM issues i
+            JOIN categories c ON c.category_id = i.category_id
+            WHERE i.resolved_at IS NOT NULL
+            GROUP BY c.category_name
+            ORDER BY avg_hours ASC
+        `);
+
+        const kpiResult = await pool.query(`
+            SELECT
+                COUNT(*)                                                  AS total,
+                COUNT(*) FILTER (WHERE status = 'RESOLVED')              AS resolved,
+                COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')           AS in_progress,
+                COUNT(*) FILTER (WHERE status = 'PENDING')               AS pending,
+                COUNT(*) FILTER (WHERE priority IN ('CRITICAL','HIGH'))  AS urgent,
+                ROUND(
+                    100.0 * COUNT(*) FILTER (WHERE status = 'RESOLVED')
+                    / NULLIF(COUNT(*), 0), 1
+                )                                                         AS resolution_rate
+            FROM issues
+        `);
+
+        res.json({
+            success:    true,
+            kpis:       kpiResult.rows[0],
+            timeline:   timelineResult.rows,
+            categories: categoryResult.rows,
+            priorities: priorityResult.rows,
+            statuses:   statusResult.rows,
+            resolution: resolutionResult.rows,
+        });
+
+    } catch (error) {
+        console.error("Analytics error:", error);
+        res.status(500).json({ success: false, message: "Failed to fetch analytics", error: error.message });
+    }
+});
+
 
 // =====================================================
 // GET SINGLE ISSUE
@@ -2232,6 +2503,16 @@ router.put(
       // SUCCESS RESPONSE
       // -------------------------------------------------
 
+      // ── SOCKET: broadcast status change ──
+      const io = req.app.io;
+      if (io) {
+          io.emit("issue:status_update", {
+              issue_id: Number(id),
+              status,
+              updated_at: updatedResult.rows[0].updated_at,
+          });
+      }
+
       return res.status(200).json({
         success: true,
         message: "Complaint updated successfully",
@@ -2766,6 +3047,190 @@ router.get(
 
     }
 );
+
+// =====================================================
+// GET COMMENTS FOR AN ISSUE
+// GET /api/issues/:id/comments
+// =====================================================
+
+router.get(
+    "/:id/comments",
+    async (req, res) => {
+
+        const {
+            id
+        } = req.params;
+
+        try {
+
+            const result =
+                await pool.query(
+                    `
+                    SELECT
+                        ic.comment_id,
+                        ic.issue_id,
+                        ic.user_id,
+                        ic.comment,
+                        ic.created_at,
+
+                        u.name AS commenter_name,
+                        u.role AS commenter_role
+
+                    FROM issue_comments ic
+
+                    JOIN users u
+                        ON ic.user_id =
+                           u.user_id
+
+                    WHERE ic.issue_id = $1
+
+                    ORDER BY
+                        ic.created_at ASC
+                    `,
+                    [
+                        id
+                    ]
+                );
+
+            return res.status(200).json({
+                comments:
+                    result.rows
+            });
+
+        } catch (error) {
+
+            console.error(
+                "Get comments error:",
+                error
+            );
+
+            return res.status(500).json({
+
+                message:
+                    "Failed to fetch comments",
+
+                error:
+                    error.message
+
+            });
+
+        }
+
+    }
+);
+
+// =====================================================
+// ANALYTICS — GET /api/issues/analytics
+// =====================================================
+
+router.get("/analytics", async (req, res) => {
+    try {
+
+        // ── 1. Issues per day (last 30 days) ──────────────
+        const timelineResult = await pool.query(`
+            SELECT
+                DATE(created_at) AS day,
+                COUNT(*)::int    AS count
+            FROM issues
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+            GROUP BY DATE(created_at)
+            ORDER BY day ASC
+        `);
+
+        // ── 2. Category breakdown ──────────────────────────
+        const categoryResult = await pool.query(`
+            SELECT
+                c.category_name,
+                COUNT(i.issue_id)::int AS count
+            FROM categories c
+            LEFT JOIN issues i ON i.category_id = c.category_id
+            GROUP BY c.category_name
+            ORDER BY count DESC
+        `);
+
+        // ── 3. Priority distribution ───────────────────────
+        const priorityResult = await pool.query(`
+            SELECT
+                priority,
+                COUNT(*)::int AS count
+            FROM issues
+            GROUP BY priority
+            ORDER BY
+                CASE priority
+                    WHEN 'CRITICAL' THEN 1
+                    WHEN 'HIGH'     THEN 2
+                    WHEN 'MEDIUM'   THEN 3
+                    WHEN 'LOW'      THEN 4
+                    ELSE 5
+                END
+        `);
+
+        // ── 4. Status funnel ───────────────────────────────
+        const statusResult = await pool.query(`
+            SELECT
+                status,
+                COUNT(*)::int AS count
+            FROM issues
+            GROUP BY status
+            ORDER BY
+                CASE status
+                    WHEN 'PENDING'             THEN 1
+                    WHEN 'VERIFIED'            THEN 2
+                    WHEN 'IN_PROGRESS'         THEN 3
+                    WHEN 'RESOLVED'            THEN 4
+                    WHEN 'CLOSED'              THEN 5
+                    WHEN 'REJECTED'            THEN 6
+                    ELSE 7
+                END
+        `);
+
+        // ── 5. Avg resolution time per category (hours) ───
+        const resolutionResult = await pool.query(`
+            SELECT
+                c.category_name,
+                ROUND(
+                    AVG(
+                        EXTRACT(EPOCH FROM (i.resolved_at - i.created_at)) / 3600
+                    )::numeric, 1
+                ) AS avg_hours
+            FROM issues i
+            JOIN categories c ON c.category_id = i.category_id
+            WHERE i.resolved_at IS NOT NULL
+            GROUP BY c.category_name
+            ORDER BY avg_hours ASC
+        `);
+
+        // ── 6. Summary KPIs ───────────────────────────────
+        const kpiResult = await pool.query(`
+            SELECT
+                COUNT(*)                                                          AS total,
+                COUNT(*) FILTER (WHERE status = 'RESOLVED')                      AS resolved,
+                COUNT(*) FILTER (WHERE status = 'IN_PROGRESS')                   AS in_progress,
+                COUNT(*) FILTER (WHERE status = 'PENDING')                       AS pending,
+                COUNT(*) FILTER (WHERE priority IN ('CRITICAL','HIGH'))          AS urgent,
+                ROUND(
+                    100.0 * COUNT(*) FILTER (WHERE status = 'RESOLVED')
+                    / NULLIF(COUNT(*), 0), 1
+                )                                                                AS resolution_rate
+            FROM issues
+        `);
+
+        res.json({
+            success: true,
+            kpis:         kpiResult.rows[0],
+            timeline:     timelineResult.rows,
+            categories:   categoryResult.rows,
+            priorities:   priorityResult.rows,
+            statuses:     statusResult.rows,
+            resolution:   resolutionResult.rows,
+        });
+
+    } catch (error) {
+        console.error("Analytics error:", error);
+        res.status(500).json({ success: false, message: "Failed to fetch analytics", error: error.message });
+    }
+});
+
 
 // =====================================================
 // EXPORT ROUTER

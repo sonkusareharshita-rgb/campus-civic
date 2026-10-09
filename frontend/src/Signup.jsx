@@ -1,20 +1,32 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import "./App.css";
 
-function Signup({ onBack, onLogin, onSignupSuccess }) {
+function Signup({ onBack, onLogin, onSignupSuccess, googlePrefill }) {
+  const isGoogle = !!googlePrefill;
+
   const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
+    name:            googlePrefill?.name  || "",
+    email:           googlePrefill?.email || "",
+    password:        "",
     confirmPassword: "",
-    role: "STUDENT",
-    department_id: "",
-    year: "",
+    role:            "STUDENT",
+    department_id:   "",
+    year:            "",
   });
 
+  // If googlePrefill changes (e.g. HMR), sync it in
+  useEffect(() => {
+    if (googlePrefill) {
+      setFormData(prev => ({
+        ...prev,
+        name:  googlePrefill.name  || prev.name,
+        email: googlePrefill.email || prev.email,
+      }));
+    }
+  }, [googlePrefill]);
+
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] =
-    useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
@@ -31,37 +43,32 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
 
     const email = formData.email.trim().toLowerCase();
 
-    // College email validation
-    if (!email.endsWith("@nit.edu.in")) {
+    // College email validation — skip for Google users (email is verified by Google)
+    if (!isGoogle && !email.endsWith("@nit.edu.in")) {
       alert("Please use your NIT college email ending with @nit.edu.in");
       return;
     }
 
-    // Password validation
-    if (formData.password.length < 6) {
-      alert("Password must contain at least 6 characters.");
-      return;
-    }
-
-    if (formData.password !== formData.confirmPassword) {
-      alert("Passwords do not match.");
-      return;
+    // Password validation — only for non-Google signups
+    if (!isGoogle) {
+      if (formData.password.length < 6) {
+        alert("Password must contain at least 6 characters.");
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        alert("Passwords do not match.");
+        return;
+      }
     }
 
     // Student validation
-    if (
-      formData.role === "STUDENT" &&
-      (!formData.department_id || !formData.year)
-    ) {
+    if (formData.role === "STUDENT" && (!formData.department_id || !formData.year)) {
       alert("Please select your department and year.");
       return;
     }
 
     // Faculty validation
-    if (
-      formData.role === "FACULTY" &&
-      !formData.department_id
-    ) {
+    if (formData.role === "FACULTY" && !formData.department_id) {
       alert("Please select your department.");
       return;
     }
@@ -69,6 +76,11 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
     setLoading(true);
 
     try {
+      // For Google sign-up, generate a random secure password server-side style
+      const passwordToSend = isGoogle
+        ? Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2).toUpperCase() + "@Gc1"
+        : formData.password;
+
       const response = await fetch(
         "http://localhost:5000/api/auth/register",
         {
@@ -80,15 +92,11 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
 
           body: JSON.stringify({
             name: formData.name.trim(),
-            email: email,
-            password: formData.password,
+            email: formData.email.trim().toLowerCase(),
+            password: passwordToSend,
             role: formData.role,
-            department_id:
-              formData.department_id || null,
-            year:
-              formData.role === "STUDENT"
-                ? formData.year
-                : null,
+            department_id: formData.department_id || null,
+            year: formData.role === "STUDENT" ? formData.year : null,
           }),
         }
       );
@@ -108,6 +116,10 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
       );
 
       if (onSignupSuccess && data.user) {
+        // Store JWT for future authenticated requests
+        if (data.token) {
+          localStorage.setItem("campus_civic_token", data.token);
+        }
         onSignupSuccess(data.user);
       } else {
         onLogin();
@@ -153,52 +165,59 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
 
         </div>
 
+        {/* Google badge — shown when coming from Google Sign-In */}
+        {isGoogle && (
+          <div className="google-prefill-badge">
+            <span className="google-prefill-badge-icon">G</span>
+            <span>
+              Signed in with Google · Complete your profile to continue
+            </span>
+          </div>
+        )}
+
         {/* HEADING */}
 
         <div className="signup-heading">
 
           <span className="signup-label">
-            JOIN CAMPUS CIVIC
+            {isGoogle ? "ALMOST THERE" : "JOIN CAMPUS CIVIC"}
           </span>
 
           <h1>
-            Create your account
+            {isGoogle ? "Complete your profile" : "Create your account"}
           </h1>
 
           <p>
-            Use your NIT college account to join
-            the campus community.
+            {isGoogle
+              ? "Just pick your department and year to finish setting up."
+              : "Use your NIT college account to join the campus community."}
           </p>
 
         </div>
 
-        {/* GOOGLE */}
+        {/* Google button — only show for manual signup, not Google redirect */}
+        {!isGoogle && (
+          <>
+            <button
+              type="button"
+              className="google-signup-btn"
+              onClick={() =>
+                alert(
+                  "Google Sign Up will be connected with NIT Google authentication."
+                )
+              }
+            >
+              <span className="google-logo">G</span>
+              <span>Continue with Google</span>
+            </button>
 
-        <button
-          type="button"
-          className="google-signup-btn"
-          onClick={() =>
-            alert(
-              "Google Sign Up will be connected with NIT Google authentication."
-            )
-          }
-        >
-
-          <span className="google-logo">
-            G
-          </span>
-
-          <span>
-            Continue with Google
-          </span>
-
-        </button>
-
-        <div className="signup-divider">
-          <span></span>
-          <p>OR</p>
-          <span></span>
-        </div>
+            <div className="signup-divider">
+              <span></span>
+              <p>OR</p>
+              <span></span>
+            </div>
+          </>
+        )}
 
         {/* FORM */}
 
@@ -213,20 +232,18 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
             </label>
 
             <div className="signup-input-wrapper">
-
-              <span>
-                👤
-              </span>
-
+              <span>👤</span>
               <input
                 type="text"
                 name="name"
                 placeholder="Enter your full name"
                 value={formData.name}
                 onChange={handleChange}
+                readOnly={isGoogle}
+                style={isGoogle ? { opacity: 0.6, cursor: "not-allowed" } : {}}
                 required
               />
-
+              {isGoogle && <span title="From Google">🔒</span>}
             </div>
 
           </div>
@@ -240,25 +257,23 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
             </label>
 
             <div className="signup-input-wrapper">
-
-              <span>
-                ✉️
-              </span>
-
+              <span>✉️</span>
               <input
                 type="email"
                 name="email"
                 placeholder="yourname@nit.edu.in"
                 value={formData.email}
                 onChange={handleChange}
+                readOnly={isGoogle}
+                style={isGoogle ? { opacity: 0.6, cursor: "not-allowed" } : {}}
                 required
               />
-
+              {isGoogle && <span title="From Google">🔒</span>}
             </div>
 
-            <small>
-              Only @nit.edu.in college email addresses are allowed.
-            </small>
+            {!isGoogle && (
+              <small>Only @nit.edu.in college email addresses are allowed.</small>
+            )}
 
           </div>
 
@@ -428,91 +443,54 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
 
           )}
 
-          {/* PASSWORD */}
+          {/* PASSWORD — hidden for Google sign-up users */}
+          {!isGoogle && (
+            <>
+              <div className="signup-field">
+                <label>Password</label>
+                <div className="signup-input-wrapper">
+                  <span>🔒</span>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    placeholder="Create a password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="signup-password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? "🙈" : "👁️"}
+                  </button>
+                </div>
+              </div>
 
-          <div className="signup-field">
-
-            <label>
-              Password
-            </label>
-
-            <div className="signup-input-wrapper">
-
-              <span>
-                🔒
-              </span>
-
-              <input
-                type={
-                  showPassword
-                    ? "text"
-                    : "password"
-                }
-                name="password"
-                placeholder="Create a password"
-                value={formData.password}
-                onChange={handleChange}
-                required
-              />
-
-              <button
-                type="button"
-                className="signup-password-toggle"
-                onClick={() =>
-                  setShowPassword(!showPassword)
-                }
-              >
-                {showPassword ? "🙈" : "👁️"}
-              </button>
-
-            </div>
-
-          </div>
-
-          {/* CONFIRM PASSWORD */}
-
-          <div className="signup-field">
-
-            <label>
-              Confirm Password
-            </label>
-
-            <div className="signup-input-wrapper">
-
-              <span>
-                🔐
-              </span>
-
-              <input
-                type={
-                  showConfirmPassword
-                    ? "text"
-                    : "password"
-                }
-                name="confirmPassword"
-                placeholder="Confirm your password"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                required
-              />
-
-              <button
-                type="button"
-                className="signup-password-toggle"
-                onClick={() =>
-                  setShowConfirmPassword(
-                    !showConfirmPassword
-                  )
-                }
-              >
-                {showConfirmPassword
-                  ? "🙈"
-                  : "👁️"}
-              </button>
-
-            </div>
-
-          </div>
+              <div className="signup-field">
+                <label>Confirm Password</label>
+                <div className="signup-input-wrapper">
+                  <span>🔐</span>
+                  <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    name="confirmPassword"
+                    placeholder="Confirm your password"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="signup-password-toggle"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? "🙈" : "👁️"}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* SUBMIT */}
 
@@ -521,17 +499,10 @@ function Signup({ onBack, onLogin, onSignupSuccess }) {
             className="signup-submit"
             disabled={loading}
           >
-
             {loading
               ? "Creating account..."
-              : "Create Account"}
-
-            {!loading && (
-              <span>
-                →
-              </span>
-            )}
-
+              : isGoogle ? "Complete Setup" : "Create Account"}
+            {!loading && <span>→</span>}
           </button>
 
         </form>

@@ -232,7 +232,7 @@ function ApproverComplaintDetails({
             ✓
           </div>
 
-          <div>
+          <div className="approver-brand-text">
 
             <strong>
               Campus Civic
@@ -245,6 +245,18 @@ function ApproverComplaintDetails({
           </div>
 
         </div>
+
+        {currentUser && (
+          <div className="approver-profile">
+            <div className="approver-avatar">
+              {currentUser?.name?.charAt(0)?.toUpperCase() || "A"}
+            </div>
+            <div className="approver-user-info">
+              <strong>{currentUser?.name || "Approver"}</strong>
+              <span>{currentUser?.email || "approver@campus.edu"}</span>
+            </div>
+          </div>
+        )}
 
       </nav>
 
@@ -432,6 +444,35 @@ function ApproverComplaintDetails({
                   "No description provided."}
 
               </div>
+
+              {/* ── ATTACHED MEDIA ── */}
+              {(complaint?.image_url || complaint?.video_url) && (
+                <div style={{
+                  width: "100%",
+                  marginTop: "20px",
+                  borderRadius: "12px",
+                  overflow: "hidden",
+                  background: "#09090f",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center"
+                }}>
+                  {complaint.image_url && (
+                    <img
+                      src={complaint.image_url.startsWith("http") ? complaint.image_url : `http://localhost:5000${complaint.image_url}`}
+                      alt="Complaint Attachment"
+                      style={{ width: "100%", maxHeight: "400px", objectFit: "contain" }}
+                    />
+                  )}
+                  {complaint.video_url && !complaint.image_url && (
+                    <video
+                      src={complaint.video_url.startsWith("http") ? complaint.video_url : `http://localhost:5000${complaint.video_url}`}
+                      controls
+                      style={{ width: "100%", maxHeight: "400px" }}
+                    />
+                  )}
+                </div>
+              )}
 
             </section>
 

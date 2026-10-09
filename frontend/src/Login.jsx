@@ -1,7 +1,8 @@
 import { useState } from "react";
+import { GoogleLogin } from '@react-oauth/google';
 import "./App.css";
 
-function Login({ onBack, onLoginSuccess, onSignup }) {
+function Login({ onBack, onLoginSuccess, onSignup, onGoogleSignup }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState("student");
@@ -82,6 +83,11 @@ if (role === "approver") {
 
       alert("Login successful!");
 
+      // Store JWT for future authenticated requests
+      if (data.token) {
+        localStorage.setItem("campus_civic_token", data.token);
+      }
+
       onLoginSuccess(loggedInUser);
 
     } catch (error) {
@@ -99,10 +105,47 @@ if (role === "approver") {
   // GOOGLE LOGIN
   // =====================================================
 
-  const handleGoogleLogin = () => {
-    alert(
-      "Google Sign-In will be connected in the next step."
-    );
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setLoading(true);
+    try {
+      const response = await fetch("http://localhost:5000/api/auth/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential: credentialResponse.credential }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.message || "Google Sign-In failed");
+        return;
+      }
+
+      // ── NEW USER: redirect to Signup with pre-filled name + email ──
+      if (data.needs_profile) {
+        onGoogleSignup({
+          name:  data.google_name,
+          email: data.google_email,
+        });
+        return;
+      }
+
+      // ── EXISTING USER: log in directly ──
+      const loggedInUser = data.user;
+      if (data.token) {
+        localStorage.setItem("campus_civic_token", data.token);
+      }
+      onLoginSuccess(loggedInUser);
+
+    } catch (error) {
+      console.error("Google login error:", error);
+      alert("Unable to connect to server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleError = () => {
+    alert("Google Sign-In was unsuccessful. Try again later.");
   };
 
   // =====================================================
@@ -166,21 +209,16 @@ if (role === "approver") {
 
         {/* Google Login */}
 
-        <button
-          type="button"
-          className="google-login-btn"
-          onClick={handleGoogleLogin}
-        >
-
-          <span className="google-icon">
-            G
-          </span>
-
-          <span>
-            Continue with Google
-          </span>
-
-        </button>
+                <div className="google-login-container" style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '10px' }}>
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            theme="filled_black"
+            shape="circle"
+            text="continue_with"
+            width="100%"
+          />
+        </div>
 
 
         {/* Divider */}

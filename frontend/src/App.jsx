@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 import Feed from "./Feed";
 import Explore from "./Explore";
@@ -15,7 +15,27 @@ import AdminComplaintDetails from "./AdminComplaintDetails";
 import ApproverDashboard from "./ApproverDashboard";
 import ApproverComplaintDetails from "./ApproverComplaintDetails";
 
+import Trending from "./Trending";
+import Leaderboard from "./Leaderboard";
+import HeatMap from "./HeatMap";
+import DeptAdminManager from "./DeptAdminManager";
+import Analytics from "./Analytics";
+
 import "./App.css";
+
+// Wraps each page with a slide-in animation
+function PageSlide({ dir, pageKey, children }) {
+  return (
+    <div
+      key={pageKey}
+      className={dir === "back" ? "page-back" : "page-enter"}
+      style={{ minHeight: "100vh" }}
+    >
+      {children}
+    </div>
+  );
+}
+
 
 
 function App() {
@@ -93,6 +113,12 @@ function App() {
   const [prevPage, setPrevPage] =
     useState("feed");
 
+  const [pageDir, setPageDir] =
+    useState("forward"); // "forward" | "back"
+
+  // Pre-filled data when a new Google user is redirected to Signup
+  const [googlePrefill, setGooglePrefill] = useState(null);
+
 
   // =====================================================
   // ISSUE DETAIL
@@ -126,6 +152,11 @@ function App() {
   // =====================================================
 
   function navigate(page) {
+
+    // Determine direction for slide animation
+    const backPages = ["feed", "admin"];
+    const goingBack = backPages.includes(page) && !backPages.includes(activePage);
+    setPageDir(goingBack ? "back" : "forward");
 
     setPrevPage(activePage);
     setActivePage(page);
@@ -207,6 +238,9 @@ function App() {
 
     setPrevPage("feed");
 
+    // Clear JWT
+    localStorage.removeItem("campus_civic_token");
+
   }
 
 
@@ -239,9 +273,14 @@ function App() {
   // =====================================================
 
   function handleSignup() {
-
+    setGooglePrefill(null); // clear any prefill if navigating manually
     navigate("signup");
+  }
 
+  // Called by Login when a Google user doesn't exist yet
+  function handleGoogleSignup(prefill) {
+    setGooglePrefill(prefill); // { name, email }
+    navigate("signup");
   }
 
 
@@ -466,10 +505,46 @@ function App() {
 
 
   // =====================================================
+  // ANALYTICS PAGE
+  // =====================================================
+
+  if (activePage === "analytics") {
+
+    return (
+      <PageSlide dir={pageDir} pageKey="analytics">
+        <Analytics
+          onBack={() => setActivePage("admin")}
+        />
+      </PageSlide>
+    );
+
+  }
+
+
+  // =====================================================
+  // MANAGE ADMINS PAGE (Super Admin only)
+  // =====================================================
+
+  if (activePage === "manageAdmins") {
+
+    return (
+
+      <DeptAdminManager
+        currentUser={currentUser}
+        onBack={() => setActivePage("admin")}
+      />
+
+    );
+
+  }
+
+
+  // =====================================================
   // ADMIN FLOW
   // =====================================================
 
   if (activePage === "admin") {
+
 
     // ---------------------------------------------------
     // ADMIN COMPLAINT DETAILS
@@ -525,8 +600,20 @@ function App() {
 
       <AdminDashboard
 
+        currentUser={
+          currentUser
+        }
+
         onLogout={
           handleLogout
+        }
+
+        onManageAdmins={() =>
+          setActivePage("manageAdmins")
+        }
+
+        onAnalytics={() =>
+          setActivePage("analytics")
         }
 
 
@@ -582,6 +669,8 @@ function App() {
           navigate("signup")
         }
 
+        onGoogleSignup={handleGoogleSignup}
+
       />
 
     );
@@ -607,9 +696,9 @@ function App() {
           navigate("login")
         }
 
-        onSignupSuccess={
-          handleLoginSuccess
-        }
+        onSignupSuccess={handleLoginSuccess}
+
+        googlePrefill={googlePrefill}
 
       />
 
@@ -700,6 +789,11 @@ function App() {
               handleReportSuccess
             }
 
+            onIssueClick={(issue) => {
+              setSelectedIssue(issue);
+              navigate("feed");
+            }}
+
           />
 
         </div>
@@ -760,6 +854,7 @@ function App() {
 
           <Explore
             {...sharedProps}
+            onNavigate={navigate}
           />
 
         )}
@@ -793,23 +888,25 @@ function App() {
 
           <div className="feed-page">
 
-            <div className="feed-empty">
+            <div className="alerts-container">
 
-              <div className="feed-empty-icon">
-                🔔
+              <div className="alerts-header">
+                <div className="alerts-header-icon">
+                  🔔
+                </div>
+                <h3>
+                  Alerts
+                </h3>
               </div>
-
-
-              <h3>
-                Alerts
-              </h3>
 
 
               {notifications.length === 0 ? (
 
-                <p>
-                  No notifications yet.
-                </p>
+                <div className="feed-empty">
+                  <p>
+                    No notifications yet.
+                  </p>
+                </div>
 
               ) : (
 
@@ -934,6 +1031,41 @@ function App() {
             </div>
 
           </div>
+
+        )}
+
+
+        {/* =================================================
+            TRENDING
+        ================================================= */}
+
+        {activePage === "trending" && (
+
+          <Trending
+            {...sharedProps}
+          />
+
+        )}
+
+
+        {/* =================================================
+            LEADERBOARD
+        ================================================= */}
+
+        {activePage === "leaderboard" && (
+
+          <Leaderboard />
+
+        )}
+
+
+        {/* =================================================
+            HEATMAP
+        ================================================= */}
+
+        {activePage === "heatmap" && (
+
+          <HeatMap />
 
         )}
 

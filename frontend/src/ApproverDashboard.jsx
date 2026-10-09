@@ -269,7 +269,7 @@ function ApproverDashboard({
             </strong>
 
             <span>
-              Complaint Approver
+              {user?.email || "Complaint Approver"}
             </span>
 
           </div>

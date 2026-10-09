@@ -263,14 +263,33 @@ function IssueDetail({
         </div>
       </div>
 
-      {/* ── IMAGE ── */}
-      {issue.image_url && (
-        <div className="detail-image-wrap">
-          <img
-            src={issue.image_url}
-            alt={issue.title}
-            className="detail-image"
-          />
+      {/* ── MEDIA ── */}
+      {(issue.image_url || issue.video_url) && (
+        <div style={{
+          width: "100%",
+          maxHeight: "350px",
+          overflow: "hidden",
+          borderRadius: "16px",
+          marginBottom: "24px",
+          background: "#1c1c24",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center"
+        }}>
+          {issue.image_url && (
+            <img
+              src={issue.image_url.startsWith("http") ? issue.image_url : `http://localhost:5000${issue.image_url}`}
+              alt={issue.title}
+              style={{ width: "100%", maxHeight: "350px", objectFit: "contain" }}
+            />
+          )}
+          {issue.video_url && !issue.image_url && (
+            <video
+              src={issue.video_url.startsWith("http") ? issue.video_url : `http://localhost:5000${issue.video_url}`}
+              controls
+              style={{ width: "100%", maxHeight: "350px" }}
+            />
+          )}
         </div>
       )}
 
@@ -338,7 +357,16 @@ function IssueDetail({
             Progress
           </h3>
 
-          <div className="timeline-steps">
+          <div style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            marginTop: "16px",
+            position: "relative",
+            overflowX: "auto",
+            paddingBottom: "10px",
+            gap: "10px"
+          }}>
             {STATUS_STEPS.map((step, idx) => {
               const done = idx <= currentStepIdx;
               const current = idx === currentStepIdx;
@@ -346,27 +374,51 @@ function IssueDetail({
               return (
                 <div
                   key={step.key}
-                  className={`timeline-step ${
-                    done ? "done" : ""
-                  } ${current ? "current" : ""}`}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    flex: 1,
+                    minWidth: "70px",
+                    position: "relative",
+                    opacity: done ? 1 : 0.4
+                  }}
                 >
-                  <div className="timeline-icon-wrap">
-                    <div className="timeline-icon">
-                      {step.icon}
-                    </div>
-
-                    {idx < STATUS_STEPS.length - 1 && (
-                      <div
-                        className={`timeline-line ${
-                          done && idx < currentStepIdx
-                            ? "done"
-                            : ""
-                        }`}
-                      />
-                    )}
+                  <div style={{
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "50%",
+                    background: current ? "#7661f5" : done ? "#10b981" : "#2a2a35",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "18px",
+                    zIndex: 2,
+                    marginBottom: "8px",
+                    boxShadow: current ? "0 0 0 4px rgba(118, 97, 245, 0.2)" : "none",
+                    border: current ? "2px solid #fff" : "none"
+                  }}>
+                    {step.icon}
                   </div>
 
-                  <span className="timeline-label">
+                  {idx < STATUS_STEPS.length - 1 && (
+                    <div style={{
+                      position: "absolute",
+                      top: "20px",
+                      left: "50%",
+                      width: "100%",
+                      height: "3px",
+                      background: done && idx < currentStepIdx ? "#10b981" : "#2a2a35",
+                      zIndex: 1
+                    }} />
+                  )}
+
+                  <span style={{
+                    fontSize: "12px",
+                    fontWeight: current ? "700" : "500",
+                    color: current ? "#fff" : done ? "#e2e8f0" : "#94a3b8",
+                    textAlign: "center"
+                  }}>
                     {step.label}
                   </span>
                 </div>

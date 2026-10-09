@@ -20,7 +20,7 @@ const STATUSES = [
   { value: "RESOLVED",    label: "Resolved"      },
 ];
 
-function Explore({ currentUser, onCardClick, onUpvote, onLoginPrompt, upvotedIds }) {
+function Explore({ currentUser, onCardClick, onUpvote, onLoginPrompt, upvotedIds, onNavigate }) {
   const [issues, setIssues]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState("");
@@ -59,8 +59,40 @@ function Explore({ currentUser, onCardClick, onUpvote, onLoginPrompt, upvotedIds
     return matchSearch && matchCat && matchStatus;
   });
 
+  const DISCOVER_CARDS = [
+    { id: "trending",     icon: "🔥", label: "Trending",     desc: "Fastest rising issues" },
+    { id: "heatmap",      icon: "🗺️", label: "Heat Map",     desc: "Issue hotspot locations" },
+    { id: "leaderboard",  icon: "🏆", label: "Leaderboard",  desc: "Top reporters & categories" },
+  ];
+
   return (
     <div className="feed-page explore-page">
+
+      {/* ── DISCOVER CARDS ── */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
+        gap: "8px", padding: "16px 16px 12px",
+      }}>
+        {DISCOVER_CARDS.map(card => (
+          <button
+            key={card.id}
+            onClick={() => onNavigate?.(card.id)}
+            style={{
+              background: "rgba(99,102,241,0.08)",
+              border: "1px solid rgba(99,102,241,0.2)",
+              borderRadius: "12px",
+              padding: "12px 8px",
+              cursor: "pointer",
+              textAlign: "center",
+              transition: "all 0.2s",
+            }}
+          >
+            <div style={{ fontSize: "22px", marginBottom: "4px" }}>{card.icon}</div>
+            <div style={{ fontWeight: "700", color: "#c4c9d6", fontSize: "12px" }}>{card.label}</div>
+            <div style={{ color: "#555", fontSize: "10px", marginTop: "2px" }}>{card.desc}</div>
+          </button>
+        ))}
+      </div>
 
       {/* ── SEARCH BAR ── */}
       <div className="explore-search-wrap">

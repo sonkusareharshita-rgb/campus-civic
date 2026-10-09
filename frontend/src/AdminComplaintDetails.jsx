@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import "./ApproverDashboard.css";
+import "./AdminDashboard.css";
+import { ResolutionPanel } from "./AIPanel";
 
 function AdminComplaintDetails({ complaint, onBack }) {
   const [status, setStatus] = useState(
@@ -370,7 +371,43 @@ const handleUpdate = async () => {
                 "No description provided."}
             </div>
 
+            {/* ── ATTACHED MEDIA ── */}
+            {(complaint.image_url || complaint.video_url) && (
+              <div style={{
+                width: "100%",
+                marginTop: "20px",
+                borderRadius: "12px",
+                overflow: "hidden",
+                background: "#09090f",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center"
+              }}>
+                {complaint.image_url && (
+                  <img
+                    src={complaint.image_url.startsWith("http") ? complaint.image_url : `http://localhost:5000${complaint.image_url}`}
+                    alt="Complaint Attachment"
+                    style={{ width: "100%", maxHeight: "400px", objectFit: "contain" }}
+                  />
+                )}
+                {complaint.video_url && !complaint.image_url && (
+                  <video
+                    src={complaint.video_url.startsWith("http") ? complaint.video_url : `http://localhost:5000${complaint.video_url}`}
+                    controls
+                    style={{ width: "100%", maxHeight: "400px" }}
+                  />
+                )}
+              </div>
+            )}
+
           </section>
+
+          {/* AI Resolution Guide */}
+          {complaint.issue_id && !isResolved && (
+            <div style={{ padding: "0 4px", marginBottom: "8px" }}>
+              <ResolutionPanel issueId={complaint.issue_id} />
+            </div>
+          )}
 
 
           {/* =================================================
@@ -470,81 +507,44 @@ const handleUpdate = async () => {
 
               </div>
 
-              <div className="case-timeline">
+              <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "16px", paddingLeft: "8px" }}>
 
-                <div className="case-step completed">
-
-                  <div className="case-marker">
-                    ✓
+                <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                    <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#10b981", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold" }}>
+                      ✓
+                    </div>
+                    <div style={{ width: "2px", height: "40px", background: "#10b981" }} />
                   </div>
-
-                  <div className="case-step-content">
-
-                    <strong>
-                      Complaint Reported
-                    </strong>
-
-                    <span>
-                      Issue submitted by student
-                    </span>
-
+                  <div style={{ marginTop: "4px" }}>
+                    <strong style={{ display: "block", color: "#f8fafc", fontSize: "14px" }}>Complaint Reported</strong>
+                    <span style={{ color: "#9ca3af", fontSize: "12px" }}>Issue submitted by student</span>
                   </div>
-
                 </div>
 
-                <div className="case-line"></div>
-
-                <div className="case-step completed">
-
-                  <div className="case-marker">
-                    ✓
+                <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                    <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: "#10b981", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold" }}>
+                      ✓
+                    </div>
+                    <div style={{ width: "2px", height: "40px", background: isResolved ? "#10b981" : "#334155" }} />
                   </div>
-
-                  <div className="case-step-content">
-
-                    <strong>
-                      Under Review
-                    </strong>
-
-                    <span>
-                      Administration reviewed
-                      the complaint
-                    </span>
-
+                  <div style={{ marginTop: "4px" }}>
+                    <strong style={{ display: "block", color: "#f8fafc", fontSize: "14px" }}>Under Review</strong>
+                    <span style={{ color: "#9ca3af", fontSize: "12px" }}>Administration reviewed the complaint</span>
                   </div>
-
                 </div>
 
-                <div className="case-line"></div>
-
-                <div
-                  className={`case-step ${
-                    isResolved
-                      ? "completed"
-                      : "current"
-                  }`}
-                >
-
-                  <div className="case-marker">
-                    {isResolved ? "✓" : "•"}
+                <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+                    <div style={{ width: "28px", height: "28px", borderRadius: "50%", background: isResolved ? "#10b981" : "#7661f5", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: "bold", boxShadow: isResolved ? "none" : "0 0 0 4px rgba(118, 97, 245, 0.2)" }}>
+                      {isResolved ? "✓" : "•"}
+                    </div>
                   </div>
-
-                  <div className="case-step-content">
-
-                    <strong>
-                      {isResolved
-                        ? "Resolved"
-                        : formattedStatus}
-                    </strong>
-
-                    <span>
-                      {isResolved
-                        ? "Complaint successfully completed"
-                        : "Current complaint status"}
-                    </span>
-
+                  <div style={{ marginTop: "4px" }}>
+                    <strong style={{ display: "block", color: "#f8fafc", fontSize: "14px" }}>{isResolved ? "Resolved" : formattedStatus}</strong>
+                    <span style={{ color: "#9ca3af", fontSize: "12px" }}>{isResolved ? "Complaint successfully completed" : "Current complaint status"}</span>
                   </div>
-
                 </div>
 
               </div>

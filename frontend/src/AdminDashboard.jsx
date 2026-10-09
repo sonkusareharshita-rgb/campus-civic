@@ -1,11 +1,13 @@
 
 import { useEffect, useState } from "react";
-import "./App.css";
+import "./AdminDashboard.css";
+import AIPanel from "./AIPanel";
 
-function AdminDashboard({ onLogout, onComplaintClick }) {
+function AdminDashboard({ onLogout, onComplaintClick, currentUser, onManageAdmins, onAnalytics }) {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedFilter, setSelectedFilter] = useState("ALL");
+  const [activeTab, setActiveTab] = useState("complaints"); // "complaints" | "ai"
 
   useEffect(() => {
     fetchComplaints();
@@ -82,29 +84,19 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
   ).length;
 
   // =====================================================
-  // PRIORITY FILTER
+  // PRIORITY / STATUS FILTER
   // =====================================================
 
   const filteredComplaints = complaints.filter((issue) => {
-    if (selectedFilter === "HIGH") {
-      return (
-        (issue.priority || "").toUpperCase() === "HIGH"
-      );
+    if (selectedFilter === "HIGH" || selectedFilter === "MEDIUM" || selectedFilter === "LOW") {
+      return (issue.priority || "").toUpperCase() === selectedFilter;
     }
 
-    if (selectedFilter === "MEDIUM") {
-      return (
-        (issue.priority || "").toUpperCase() === "MEDIUM"
-      );
+    if (selectedFilter === "VERIFIED" || selectedFilter === "IN_PROGRESS" || selectedFilter === "RESOLVED") {
+      return (issue.status || "").toUpperCase() === selectedFilter;
     }
 
-    if (selectedFilter === "LOW") {
-      return (
-        (issue.priority || "").toUpperCase() === "LOW"
-      );
-    }
-
-    return true;
+    return true; // For "ALL" or anything else
   });
 
   // =====================================================
@@ -116,6 +108,24 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
       title: "All Complaints",
       subtitle:
         "Overview of all complaints currently handled by administration",
+    },
+
+    VERIFIED: {
+      title: "Awaiting Action",
+      subtitle:
+        "Complaints verified by approvers and waiting for administrative assignment or action",
+    },
+
+    IN_PROGRESS: {
+      title: "In Progress",
+      subtitle:
+        "Complaints currently being handled and resolved by department teams",
+    },
+
+    RESOLVED: {
+      title: "Resolved Complaints",
+      subtitle:
+        "Complaints successfully completed and marked as resolved",
     },
 
     HIGH: {
@@ -137,7 +147,10 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
     },
   };
 
-  const currentFilter = filterInfo[selectedFilter];
+  const currentFilter = filterInfo[selectedFilter] || {
+    title: "All Complaints",
+    subtitle: "Overview of all complaints currently handled by administration",
+  };
 
   // =====================================================
   // SELECT FILTER
@@ -185,12 +198,12 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
           <div className="admin-user-info">
 
             <div className="admin-avatar">
-              A
+              {(currentUser?.name || "A").charAt(0).toUpperCase()}
             </div>
 
             <div>
-              <strong>Administrator</strong>
-              <small>Admin Portal</small>
+              <strong>{currentUser?.name || "Administrator"}</strong>
+              <small>{currentUser?.email || "Admin Portal"}</small>
             </div>
 
           </div>
@@ -237,6 +250,41 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
 
           </div>
 
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+
+          {/* Analytics — all admins */}
+          <button
+            className="dashboard-refresh"
+            onClick={onAnalytics}
+            style={{ background: "rgba(16,185,129,0.12)", borderColor: "rgba(16,185,129,0.3)", color: "#34d399" }}
+          >
+            📊 Analytics
+          </button>
+
+          {/* AI Panel tab */}
+          <button
+            className="dashboard-refresh"
+            onClick={() => setActiveTab(t => t === "ai" ? "complaints" : "ai")}
+            style={{
+              background: activeTab === "ai" ? "rgba(99,102,241,0.25)" : "rgba(99,102,241,0.08)",
+              borderColor: "rgba(99,102,241,0.4)", color: "#818cf8",
+              fontWeight: activeTab === "ai" ? "800" : "600",
+            }}
+          >
+            🤖 AI Centre
+          </button>
+
+          {/* Manage Admins — Super Admin only */}
+          {Number(currentUser?.admin_type_id) === 1 && (
+            <button
+              className="dashboard-refresh"
+              onClick={onManageAdmins}
+              style={{ background: "rgba(99,102,241,0.15)", borderColor: "rgba(99,102,241,0.3)", color: "#818cf8" }}
+            >
+              🏛️ Manage Admins
+            </button>
+          )}
+
           <button
             className="dashboard-refresh"
             onClick={fetchComplaints}
@@ -251,6 +299,8 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
               : "Refresh"}
           </button>
 
+          </div>
+
         </div>
 
 
@@ -258,6 +308,9 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
             STAT CARDS
         ================================================= */}
 
+        {/* Render AIPanel or Complaints based on active tab */}
+        {activeTab === "ai" && <AIPanel />}
+        {activeTab !== "ai" && (
         <section className="admin-stats">
 
           {/* TOTAL */}
@@ -420,12 +473,8 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
           </button>
 
         </section>
-
-
-        {/* =================================================
-            COMPLAINT SECTION
-        ================================================= */}
-
+        )}
+        {activeTab !== "ai" && (
         <section
           className="admin-section complaints-panel"
           id="complaints-section"
@@ -475,78 +524,68 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
           <div className="complaint-filters">
 
             {/* ALL */}
-
             <button
-              className={
-                selectedFilter === "ALL"
-                  ? "filter-active"
-                  : ""
-              }
-              onClick={() =>
-                selectFilter("ALL")
-              }
+              className={selectedFilter === "ALL" ? "filter-active" : ""}
+              onClick={() => selectFilter("ALL")}
             >
               All
-              <span>
-                {totalComplaints}
-              </span>
+              <span>{totalComplaints}</span>
             </button>
 
+            {/* AWAITING ACTION (VERIFIED) */}
+            <button
+              className={selectedFilter === "VERIFIED" ? "filter-active" : ""}
+              onClick={() => selectFilter("VERIFIED")}
+            >
+              Awaiting Action
+              <span>{verifiedComplaints}</span>
+            </button>
+
+            {/* IN PROGRESS */}
+            <button
+              className={selectedFilter === "IN_PROGRESS" ? "filter-active" : ""}
+              onClick={() => selectFilter("IN_PROGRESS")}
+            >
+              In Progress
+              <span>{progressComplaints}</span>
+            </button>
+
+            {/* RESOLVED */}
+            <button
+              className={selectedFilter === "RESOLVED" ? "filter-active" : ""}
+              onClick={() => selectFilter("RESOLVED")}
+            >
+              Resolved
+              <span>{resolvedComplaints}</span>
+            </button>
+
+            <span className="filter-divider"></span>
 
             {/* HIGH */}
-
             <button
-              className={
-                selectedFilter === "HIGH"
-                  ? "filter-active"
-                  : ""
-              }
-              onClick={() =>
-                selectFilter("HIGH")
-              }
+              className={selectedFilter === "HIGH" ? "filter-active" : ""}
+              onClick={() => selectFilter("HIGH")}
             >
               High
-              <span>
-                {highPriorityComplaints}
-              </span>
+              <span>{highPriorityComplaints}</span>
             </button>
-
 
             {/* MEDIUM */}
-
             <button
-              className={
-                selectedFilter === "MEDIUM"
-                  ? "filter-active"
-                  : ""
-              }
-              onClick={() =>
-                selectFilter("MEDIUM")
-              }
+              className={selectedFilter === "MEDIUM" ? "filter-active" : ""}
+              onClick={() => selectFilter("MEDIUM")}
             >
               Medium
-              <span>
-                {mediumPriorityComplaints}
-              </span>
+              <span>{mediumPriorityComplaints}</span>
             </button>
 
-
             {/* LOW */}
-
             <button
-              className={
-                selectedFilter === "LOW"
-                  ? "filter-active"
-                  : ""
-              }
-              onClick={() =>
-                selectFilter("LOW")
-              }
+              className={selectedFilter === "LOW" ? "filter-active" : ""}
+              onClick={() => selectFilter("LOW")}
             >
               Low
-              <span>
-                {lowPriorityComplaints}
-              </span>
+              <span>{lowPriorityComplaints}</span>
             </button>
 
           </div>
@@ -726,6 +765,7 @@ function AdminDashboard({ onLogout, onComplaintClick }) {
           </div>
 
         </section>
+        )}
 
       </main>
 
