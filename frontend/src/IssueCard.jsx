@@ -67,12 +67,14 @@ function IssueCard({
   onLoginPrompt,
   isUpvoted,
   upvotedIds = [],
+  trendingData,
 }) {
   const status        = STATUS_CONFIG[issue.status] || STATUS_CONFIG.PENDING;
   const isServerUpvoted = currentUser && issue.supporters?.some(s => s.user_id === currentUser.user_id);
   const isLocallyUpvoted = upvotedIds.includes(issue.issue_id);
   const alreadyUpvoted = isUpvoted || isServerUpvoted || isLocallyUpvoted;
-  const displayCount = Number(issue.report_count) + ((isLocallyUpvoted && !isServerUpvoted) ? 1 : 0);
+  const baseCount = Number(issue.report_count || issue.support_count || 0);
+  const displayCount = baseCount + ((isLocallyUpvoted && !isServerUpvoted) ? 1 : 0);
 
   // swipe state
   const [swipeX,     setSwipeX]     = useState(0);
@@ -121,6 +123,20 @@ function IssueCard({
         onDoubleClick={handleUpvote}
         onClick={() => { onCardClick?.(issue); onClick?.(issue); }}
       >
+        {trendingData && (
+          <div style={{
+            position: "absolute", top: "12px", left: "12px", zIndex: 10,
+            background: trendingData.rank <= 3 ? "linear-gradient(135deg, #f59e0b, #ef4444)" : "rgba(0,0,0,0.7)", 
+            color: "white",
+            padding: "4px 8px", borderRadius: "6px", fontSize: "12px", fontWeight: "bold",
+            display: "flex", alignItems: "center", gap: "6px",
+            border: trendingData.rank <= 3 ? "none" : "1px solid rgba(255,255,255,0.2)"
+          }}>
+            <span>🔥</span>
+            <span>#{trendingData.rank} Trending</span>
+            {trendingData.velocity && <span style={{ opacity: 0.8, fontSize: "10px", marginLeft: "4px" }}>({trendingData.velocity}/hr)</span>}
+          </div>
+        )}
         {issue.image_url ? (
           <img
             src={`http://localhost:5000${issue.image_url}`}

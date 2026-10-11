@@ -142,18 +142,18 @@ function Explore({ currentUser, onCardClick, onUpvote, onLoginPrompt, upvotedIds
 
       {/* ── CARDS ── */}
       {loading ? (
-        <div className="feed-loading">
+        <div className="feed-loading" style={{ paddingTop: "40px" }}>
           <div className="feed-spinner" />
           <p>Loading…</p>
         </div>
       ) : filtered.length === 0 ? (
-        <div className="feed-empty">
+        <div className="feed-empty" style={{ paddingTop: "40px" }}>
           <div className="feed-empty-icon">🔎</div>
           <h3>No issues found</h3>
           <p>Try a different search or filter.</p>
         </div>
       ) : (
-        <div className="feed-list">
+        <div style={{ display: "flex", flexDirection: "column", paddingBottom: "80px" }}>
           {filtered.map((issue) => (
             <IssueCard
               key={issue.issue_id}
